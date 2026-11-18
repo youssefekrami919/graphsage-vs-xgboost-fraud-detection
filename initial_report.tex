@@ -1,0 +1,413 @@
+\documentclass[11pt,a4paper]{article}
+
+% --- Essential Packages ---
+\usepackage[utf8]{inputenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{microtype}
+\usepackage{fancyhdr}
+\usepackage{enumitem}
+\usepackage{array}
+
+% --- Hyperref Setup ---
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!70!black,
+    citecolor=green!50!black,
+    urlcolor=blue!80!black,
+    pdftitle={Research Report: GraphSAGE vs XGBoost on IEEE-CIS},
+    pdfauthor={}
+}
+
+% --- Page Style Setup ---
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{\small GraphSAGE vs. XGBoost on IEEE-CIS}
+\lhead{\small Fraud Detection Research}
+\cfoot{\thepage}
+
+\begin{document}
+
+% =========================================================================
+% TITLE & METADATA
+% =========================================================================
+\title{\Large \textbf{A GraphSAGE Approach for Fraud Detection on the IEEE-CIS Dataset:\\A Comparative Study with XGBoost on Accuracy and Inference Latency}}
+\author{}
+\date{}
+
+\maketitle
+
+\begin{abstract}
+Financial fraud detection operating in production transaction streams must satisfy sub-second service level agreements (SLAs), frequently bounding per-transaction classification latency to under 50--100 milliseconds. While Graph Neural Networks (GNNs) have garnered widespread academic attention for their theoretical ability to capture relational fraud rings through topological message passing, existing literature predominantly benchmarks GNNs exclusively on static predictive metrics (such as ROC-AUC and PR-AUC), omitting end-to-end inference latency evaluation against industry-standard Gradient Boosted Decision Trees (GBDTs). This technical report establishes the definitive pre-implementation blueprint for evaluating an inductive GraphSAGE model against a tuned XGBoost baseline on the canonical IEEE-CIS Fraud Detection dataset (590,540 transactions, 432 raw features, 3.5\% positive class rate). We formally articulate the research gap, resolve the catastrophic $O(N^2)$ combinatorial edge explosion inherent to low-cardinality device identifiers, formulate a leak-free causal graph construction protocol, define a temporal cross-validation framework via \texttt{TimeSeriesSplit(n\_splits=5)}, and detail dual latency benchmarking ($N=1,000$ batch vs. $N=1$ streaming). Furthermore, we establish the explicit acceptance criteria and pivot rules for targeted submission to Elsevier Q1 journals (\textit{Expert Systems with Applications} or \textit{Knowledge-Based Systems}).
+\end{abstract}
+
+\vspace{1.5em}
+\newpage
+% =========================================================================
+% TABLE OF CONTENTS & LISTS
+% =========================================================================
+\tableofcontents
+\vspace{1.5em}
+\listoftables
+\newpage
+
+% =========================================================================
+% SECTION 1: EXECUTIVE SUMMARY & RESEARCH POSITIONING
+% =========================================================================
+\section{Executive Summary \& Research Positioning}
+
+\subsection{Industrial Problem Context: The Sub-Second Banking SLA}
+Modern card-not-present (CNP) and electronic fund transfer (EFT) systems process hundreds of millions of transactions daily across global financial rails. Commercial fraud prevention engines (e.g., Mastercard Decision Intelligence, Visa Advanced Authorization) operate within stringent Service Level Agreements (SLAs). The entire decision pipeline---comprising payload ingestion, tabular feature extraction, fraud model inference, rule-based override engines, and downstream settlement routing---must execute within an allotted temporal budget of $50$ to $100$ milliseconds per transaction. 
+
+In this industrial ecosystem, Gradient Boosted Decision Trees (GBDTs), exemplified by \textbf{XGBoost} \cite{chen2016xgboost} and \textbf{LightGBM}, have maintained an unchallenged position as the de facto operational standard. GBDTs exhibit sub-millisecond per-sample latency, natively handle tabular missingness, require zero feature scaling, and achieve stellar performance on heterogeneous tabular data.
+
+Conversely, academic research has increasingly championed Graph Neural Networks (GNNs) \cite{hamilton2017inductive,wang2019semi} for anti-money laundering (AML) and payment fraud detection. The foundational hypothesis posits that fraudulent actors operate via distributed syndicates (fraud rings) sharing compromised credit instruments, IP subnets, and device hardware. While GNNs demonstrably capture high-order relational motifs, their empirical adoption in high-frequency production banking pipelines remains severely constrained by computational overhead:
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Subgraph Assembly Latency:} Constructing the local receptive field for an incoming transaction requires querying multi-hop transactional indices, which constitutes an expensive I/O and memory bottleneck.
+    \item \textbf{Dynamic Neighborhood Aggregation:} Tensor scatter and gather operations across variable degree distributions do not align cleanly with traditional static tensor compilation paradigms.
+    \item \textbf{Diminishing Marginal Gains on Tabular Manifolds:} Tabular datasets often lack explicit natural graph topology; projecting relational heuristics onto tabular data frequently introduces topological noise.
+\end{enumerate}
+
+\subsection{The Primary Research Question}
+To bridge the gulf between academic GNN literature and production deployment constraints, this research addresses the following primary empirical question:
+\begin{quote}
+\textit{``Does an inductive GraphSAGE model exploiting shared-entity edges between transactions achieve a statistically significant improvement in ROC-AUC and PR-AUC over a tuned, hardware-controlled XGBoost tabular baseline on the IEEE-CIS dataset, and at what computational inference-latency cost per 1,000 transactions and per single transaction?''}
+\end{quote}
+
+\subsection{The Win-Win Publication Strategy: The Empirical Decision Pivot Rule}
+A critical vulnerability of empirical applied machine learning manuscripts submitted to high-impact journals (e.g., Elsevier's \textit{Expert Systems with Applications} [ESWA, Q1] or \textit{Knowledge-Based Systems} [KBS, Q1]) is vulnerability to non-significant or negative outcomes. If an author's thesis rests solely on the premise that ``Model $A$ outperforms Model $B$'', an empirical outcome where Model $B$ matches or exceeds Model $A$ frequently invalidates the narrative, leading to desk rejection.
+
+To guarantee academic rigor and publication viability regardless of raw metric rankings, this research operates under a formalized \textbf{Empirical Decision Pivot Rule} (illustrated in Table~\ref{tab:pivot_rule}):
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Empirical Decision Pivot Framework for Tier-1 Journal Submission}
+\label{tab:pivot_rule}
+\begin{tabular}{p{2.8cm}p{4.2cm}p{7.5cm}}
+\toprule
+\textbf{Empirical Outcome} & \textbf{Quantitative Criterion} & \textbf{Academic Contribution \& Narrative Framing} \\
+\midrule
+\textbf{Scenario A: Graph Superiority} & GraphSAGE improves test $\text{PR-AUC} \ge +0.010$ and $\text{ROC-AUC} \ge +0.008$ over XGBoost with latency within 100ms/1k tx. & \textbf{Affirmative Contribution:} Proves that shared-entity topological message passing extracts latent fraud-ring representations unobtainable via tabular feature engineering alone. Demonstrates inductive deployability. \\
+\midrule
+\textbf{Scenario B: Practical Equivalence / Negative Result} & GraphSAGE AUC is within $\pm 0.005$ of XGBoost, but latency is $10\times$ to $50\times$ higher. & \textbf{High-Value Empirical Cautionary Study:} Proves that tabular GBDTs remain empirically superior for real-time banking pipelines. Demonstrates that topological message-passing overhead is commercially unjustified on tabular fraud datasets without native relational graphs. Highly cited by practitioners. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+This framing ensures that the research produces high-value, reproducible science under all possible experimental outcomes.
+
+% =========================================================================
+% SECTION 2: DATASET TOPOLOGY & CAUSAL GRAPH FORMULATION
+% =========================================================================
+\section{Dataset Characteristics \& Causal Graph Formulation}
+
+\subsection{The IEEE-CIS Benchmark Dataset}
+The benchmark leverages the real-world e-commerce transaction dataset provided by Vesta Corporation through the IEEE Computational Intelligence Society (IEEE-CIS). The dataset comprises two relational tables joined via a one-to-one \texttt{LEFT JOIN} on the primary key \texttt{TransactionID}:
+\begin{itemize}[leftmargin=*]
+    \item \texttt{train\_transaction.csv}: 590,540 rows across 394 features, including transaction timestamp (\texttt{TransactionDT}), payment amount (\texttt{TransactionAmt}), product code (\texttt{ProductCD}), card details (\texttt{card1}--\texttt{card6}), distance measures (\texttt{dist1}, \texttt{dist2}), purchaser/recipient email domains (\texttt{P\_emaildomain}, \texttt{R\_emaildomain}), and engineered anonymized counting features (\texttt{C1}--\texttt{C14}, \texttt{D1}--\texttt{D15}, \texttt{V1}--\texttt{V339}).
+    \item \texttt{train\_identity.csv}: 144,233 rows across 41 identity features, including network connection characteristics, browser signatures, operating system, and hardware identifiers (\texttt{DeviceInfo}, \texttt{id\_01}--\texttt{id\_38}).
+\end{itemize}
+The ground-truth label \texttt{isFraud} exhibits severe class imbalance: exactly \textbf{20,663 positive fraud instances} out of 590,540 transactions, establishing an empirical positive fraud prevalence of \textbf{3.50\%}.
+
+\subsection{The Combinatorial Explosion Trap: Mathematical Analysis of \texttt{DeviceType}}
+In naive implementations of transaction graphs, practitioners frequently connect any two transactions that share an identical attribute value. In early conceptual iterations of this study, four candidate identity columns were considered for edge generation: \texttt{card1}, \texttt{DeviceInfo}, \texttt{P\_emaildomain}, and \texttt{DeviceType}.
+
+A rigorous topological analysis reveals that incorporating \texttt{DeviceType} induces a \textbf{catastrophic $O(N^2)$ combinatorial explosion} that inevitably causes fatal Out-Of-Memory (OOM) faults, even on enterprise-grade infrastructure. 
+
+\paragraph{Mathematical Proof of the Super-Node Phenomenon:} Let $V$ denote the set of transaction nodes ($|V| = 590,540$). The categorical column \texttt{DeviceType} exhibits extremely low cardinality ($K=2$), consisting solely of the tokens \texttt{"desktop"} and \texttt{"mobile"} (with residual missing values). In the IEEE-CIS dataset, approximately 85,000 transactions report \texttt{"desktop"} and 55,000 transactions report \texttt{"mobile"}. 
+
+If an edge is instantiated between all transaction pairs $(u, v)$ sharing an identical \texttt{DeviceType}, each partition forms a fully connected clique $K_m$. The resulting edge count $E_{\text{DeviceType}}$ is bounded by:
+\begin{equation}
+E_{\text{desktop}} = \frac{m_{\text{desktop}} \times (m_{\text{desktop}} - 1)}{2} \approx \frac{85,000 \times 84,999}{2} \approx 3.61 \times 10^9 \text{ edges}
+\end{equation}
+\begin{equation}
+E_{\text{mobile}} = \frac{m_{\text{mobile}} \times (m_{\text{mobile}} - 1)}{2} \approx \frac{55,000 \times 54,999}{2} \approx 1.51 \times 10^9 \text{ edges}
+\end{equation}
+Summing these two subsets yields over \textbf{5.1 billion edges} from \texttt{DeviceType} alone. Storing a 64-bit integer coordinate matrix for $5.1 \times 10^9$ edges requires:
+\begin{equation}
+\text{RAM}_{\text{EdgeIndex}} = 2 \times (5.1 \times 10^9) \times 8 \text{ bytes} \approx 81.6 \text{ Gigabytes}
+\end{equation}
+This exceeds standard workstation system memory by a substantial factor, resulting in an immediate kernel panic. Semantically, connecting every customer who used a ``desktop'' creates meaningless global connectivity, completely destroying the topological clustering of localized fraud syndicates (oversmoothing the entire graph manifold into uniform noise).
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Topological Analysis of Candidate Edge Columns on IEEE-CIS}
+\label{tab:edge_topology}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Entity Column} & \textbf{Unique Values} & \textbf{Max Frequency} & \textbf{Theoretical Max Edges} & \textbf{Architectural Action} \\
+\midrule
+\texttt{DeviceType} & 2 & $\sim$85,000 & $\approx 3.6 \times 10^9$ & \textbf{EXCLUDED} (Causes fatal OOM) \\
+\texttt{P\_emaildomain} & 59 & $\sim$228,000 (\texttt{gmail}) & $\approx 2.6 \times 10^{10}$ & \textbf{FILTERED} ($f \le 500$, hub capping) \\
+\texttt{DeviceInfo} & 1,786 & $\sim$21,000 (\texttt{Windows}) & $\approx 2.2 \times 10^8$ & \textbf{FILTERED} ($f \le 500$, device models) \\
+\texttt{card1} & 13,553 & 4,948 & $\approx 1.2 \times 10^7$ & \textbf{FILTERED} ($f \le 500$, card accounts) \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+\subsection{Frequency-Capped Edge Construction with Strict Causal Ordering}
+To preserve true relational fraud rings while maintaining bounded memory consumption, we institute two rigorous topological filtering constraints:
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{High-Cardinality Capping ($f_{\text{max}} = 500$):} An entity value (e.g., a specific \texttt{card1} identifier or granular \texttt{DeviceInfo} string such as \texttt{"SM-G960N Build/R16NW"}) is eligible to generate edges if and only if its occurrence frequency $f$ satisfies:
+    \begin{equation}
+    2 \le f \le 500
+    \end{equation}
+    Entities appearing only once ($f=1$) cannot bridge transactions and are treated as isolated nodes. Ubiquitous mega-hubs ($f > 500$, such as generic \texttt{gmail.com} or \texttt{Windows}) are stripped from edge creation, eliminating spurious background connectivity.
+    \item \textbf{Temporal Causal Edge Direction ($t_{\text{src}} \le t_{\text{dst}}$):} To eliminate retrospective information leakage, all edges are strictly directed from the temporally prior transaction to the subsequent transaction:
+    \begin{equation}
+    \mathcal{E} = \left\{ (u, v) \;\middle|\; \text{Entity}(u) = \text{Entity}(v) \land \text{TransactionDT}(u) \le \text{TransactionDT}(v) \right\}
+    \end{equation}
+    Furthermore, each node connects to at most $k_{\text{prior}} = 20$ immediately preceding transactions within the same entity partition, bounding maximum node in-degree.
+\end{enumerate}
+
+% =========================================================================
+% SECTION 3: METHODOLOGICAL FRAMEWORK & MODEL ARCHITECTURES
+% =========================================================================
+\section{Methodological Framework \& Model Architectures}
+
+\subsection{Primary Baseline: Tuned XGBoost (Histogram Method)}
+The primary tabular benchmark is an engineered \textbf{XGBoost Classifier} \cite{chen2016xgboost} utilizing the optimized histogram tree-building method (\texttt{tree\_method='hist'}). 
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Class Imbalance Handling:} The positive fraud class (3.5\%) is compensated via the exact negative-to-positive ratio applied to the loss function gradient:
+    \begin{equation}
+    \text{\texttt{scale\_pos\_weight}} = \frac{N_{\text{negative}}}{N_{\text{positive}}} = \frac{590,540 - 20,663}{20,663} \approx 27.58
+    \end{equation}
+    \item \textbf{Hyperparameter Specification:} Max tree depth $= 6$, learning rate $\eta = 0.05$, subsample ratio $= 0.8$, column subsampling by tree $= 0.8$, early stopping patience $= 50$ validation rounds based on PR-AUC.
+    \item \textbf{Input Feature Space:} Missing values are natively handled via default splitting paths with numerical imputation set to $-999.0$. Identifiers (\texttt{TransactionID}) and raw timestamps (\texttt{TransactionDT}) are explicitly stripped.
+\end{itemize}
+
+\subsection{Secondary Tabular Baselines: Random Forest \& Logistic Regression}
+To span the full spectrum of inductive bias across tabular baselines:
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Random Forest Classifier:} An ensemble of $B = 200$ randomized decision trees with maximum depth $D = 12$, utilizing cost-sensitive balancing (\texttt{class\_weight='balanced'}) and parallel execution across all CPU cores.
+    \item \textbf{Balanced Logistic Regression:} Serves as the parametric linear floor. Continuous numerical columns are standardized via \texttt{StandardScaler} fit strictly on the training partition. Missing values are imputed using median values computed exclusively from training data.
+\end{enumerate}
+
+\subsection{Proposed Graph Model: Inductive Two-Layer GraphSAGE}
+\textbf{GraphSAGE} (Sample and Aggregate) \cite{hamilton2017inductive} is selected as the primary GNN architecture due to its strictly inductive formulation. Unlike transductive spectral GCNs that require the complete graph Laplacian during training and inference, GraphSAGE learns parameterized aggregation functions over localized sampled neighborhoods, making it uniquely compatible with open-world transaction streams.
+
+\paragraph{Mathematical Formulation:} For a transaction node $v \in V$ at layer $k \in \{1, 2\}$, let $\mathcal{N}(v)$ denote the sampled neighborhood under fan-out parameter $S_k$. The layer-wise node representation $h_v^{(k)}$ is computed as:
+\begin{equation}
+h_{\mathcal{N}(v)}^{(k)} = \text{AGGREGATE}_k \left( \left\{ h_u^{(k-1)}, \forall u \in \mathcal{N}(v) \right\} \right)
+\end{equation}
+\begin{equation}
+h_v^{(k)} = \sigma \left( W^{(k)} \cdot \left[ h_v^{(k-1)} \;\big\|\; h_{\mathcal{N}(v)}^{(k)} \right] \right)
+\end{equation}
+where $\big\|$ denotes vector concatenation, $W^{(k)}$ is a learnable weight matrix, $\sigma$ represents the ReLU activation function, and $\text{AGGREGATE}$ is parameterized via the Mean aggregator \cite{hamilton2017inductive}.
+
+\paragraph{Architecture and Training Configuration:}
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Layer Topology:} Layer 1 projects input feature dimension $d_{\text{in}} \to 128$; Layer 2 projects $128 \to 128$; followed by Batch Normalization (\texttt{BatchNorm1d}) and Dropout ($p = 0.30$). A final linear projection layer outputs the scalar classification logit $\hat{y}_v \in \mathbb{R}$.
+    \item \textbf{Mini-Batch Neighborhood Sampling (\texttt{NeighborLoader}):} During training, neighborhoods are dynamically sampled using a two-hop fan-out scheme via PyG \cite{fey2019fast}:
+    \begin{equation}
+    \text{Fan-Out} = [S_1 = 15, \; S_2 = 10]
+    \end{equation}
+    Batch size is fixed at $B = 1,024$ seed transactions per mini-batch.
+    \item \textbf{Loss Function and Optimization:} Optimized using \texttt{Adam} ($\text{lr} = 10^{-3}$) under class-weighted binary cross-entropy with logits:
+    \begin{equation}
+    \mathcal{L} = -\frac{1}{B} \sum_{i=1}^B \left[ w_{\text{pos}} y_i \log \sigma(\hat{y}_i) + (1 - y_i) \log (1 - \sigma(\hat{y}_i)) \right]
+    \end{equation}
+    with gradient norm clipping bounded at $\|\mathbf{g}\|_2 \le 1.0$ and early stopping triggered after 5 non-improving validation epochs (maximum budget $= 25$ epochs).
+\end{itemize}
+
+\subsection{Appendix Baseline: Graph Attention Network (GAT)}
+To directly pre-empt reviewer inquiries regarding attention-weighted message passing, a two-layer \textbf{Graph Attention Network (GAT)} \cite{velickovic2018graph} is benchmarked as an auxiliary baseline:
+\begin{itemize}[leftmargin=*]
+    \item Layer 1: Multi-head attention with $K=4$ independent heads, hidden channel dimension $= 32$ per head ($128$ total channels concatenated), with LeakyReLU negative slope $\alpha = 0.2$.
+    \item Layer 2: Single-head attention projection ($128 \to 32$) followed by classification head.
+\end{itemize}
+GAT is designated for the manuscript Appendix to substantiate the computational latency penalty incurred by dynamic attention coefficient computation over large transaction graphs.
+
+% =========================================================================
+% SECTION 4: EXPERIMENTAL EVALUATION PROTOCOL
+% =========================================================================
+\section{Experimental Evaluation Protocol}
+
+\subsection{The Temporal Data Leakage Problem: Why Random K-Fold Fails}
+In conventional machine learning benchmarks, researchers routinely apply randomized $K$-fold cross-validation (or Stratified $K$-fold) to assess generalization variance. In transaction fraud detection, applying randomized shuffling constitutes an \textbf{invalid methodology that invalidates all reported metrics} due to severe temporal data leakage.
+
+\paragraph{A Concrete Chronological Counter-Example:}
+Consider an empirical dataset spanning transaction records from January through May:
+\begin{itemize}[leftmargin=*]
+    \item If a randomized 5-fold split is executed, transactions from \textbf{May} and \textbf{April} will be partitioned into the training set, while transactions from \textbf{February} are assigned to the test fold.
+    \item The model is thus trained on the sophisticated, evolved behavioral fingerprints and IP subnets of fraud rings active in May to predict historical transactions in February.
+    \item In commercial production, a fraud model operating on February 15th has zero access to data from May 10th. Fraud mechanisms exhibit rapid \textbf{concept drift} as criminal syndicates adapt to fraud rules. Shuffling creates an artificial, unachievable performance spike (information leakage from the future into the past).
+\end{itemize}
+
+\subsection{Strict Chronological Splitting \& \texttt{TimeSeriesSplit(n\_splits=5)}}
+To guarantee strict temporal realism, this study executes a dual evaluation protocol:
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Primary Benchmark Split (80 / 10 / 10):} All 590,540 transactions are sorted in strictly ascending chronological order via \texttt{TransactionDT}. The earliest $80\%$ of transactions form the training split; the subsequent $10\%$ form the validation split (hyperparameter calibration and early stopping); and the final $10\%$ form the unseen, held-out test split.
+    \item \textbf{Statistical Significance Protocol (\texttt{TimeSeriesSplit}):} To perform rigorous hypothesis testing without temporal corruption, hyperparameter evaluation across the training history uses an expanding-window temporal split ($K=5$ folds), as formalized in Table~\ref{tab:temporal_cv}.
+\end{enumerate}
+
+\begin{table}[htbp]
+\centering
+\small
+\caption{Temporal Expanding Window Formulation (\texttt{TimeSeriesSplit}, $K=5$)}
+\label{tab:temporal_cv}
+\begin{tabular}{lll}
+\toprule
+\textbf{Fold Index} & \textbf{Training Window (Expanding Past)} & \textbf{Validation Window (Immediate Future)} \\
+\midrule
+Fold 1 & Chronological Month 1 ($0\% \to 20\%$) & Chronological Month 2 ($20\% \to 36\%$) \\
+Fold 2 & Chronological Months 1--2 ($0\% \to 36\%$) & Chronological Month 3 ($36\% \to 52\%$) \\
+Fold 3 & Chronological Months 1--3 ($0\% \to 52\%$) & Chronological Month 4 ($52\% \to 68\%$) \\
+Fold 4 & Chronological Months 1--4 ($0\% \to 68\%$) & Chronological Month 5 ($68\% \to 84\%$) \\
+Fold 5 & Chronological Months 1--5 ($0\% \to 84\%$) & Chronological Month 6 ($84\% \to 100\%$) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Paired $t$-Test with Bonferroni Correction:}
+Let $s_{A, k}$ and $s_{B, k}$ denote the evaluation metric (e.g., PR-AUC) for GraphSAGE and XGBoost on fold $k \in \{1, \dots, 5\}$. We compute the paired difference $d_k = s_{A, k} - s_{B, k}$ and evaluate the paired $t$-statistic:
+\begin{equation}
+t = \frac{\bar{d}}{s_d / \sqrt{K}}, \quad \text{where} \quad \bar{d} = \frac{1}{K} \sum_{k=1}^K d_k
+\end{equation}
+To counteract Type I error inflation arising from multiple baseline comparisons (GraphSAGE vs. XGBoost, RF, LR), we enforce the strict \textbf{Bonferroni correction}:
+\begin{equation}
+\alpha_{\text{adjusted}} = \frac{\alpha_{\text{base}}}{M} = \frac{0.05}{3} \approx 0.0167
+\end{equation}
+A performance divergence is declared statistically significant if and only if the two-tailed $p$-value satisfies $p \le \alpha_{\text{adjusted}}$.
+
+\subsection{Dual Latency Profiling Protocol: Batch vs. Online Streaming}
+Existing literature commonly reports latency by amortizing massive batches ($B=10,000$) through GPU hardware, which conceals real-world overhead. This research establishes a \textbf{dual latency profiling protocol}:
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Batch Throughput Profiling ($N=1,000$ transactions):} Simulates nocturnal or scheduled batch settlement pipelines. We measure the wall-clock execution time across 10 consecutive timed runs (preceded by 3 warm-up cycles), reporting $\text{Mean} \pm \text{Standard Deviation}$ in milliseconds.
+    \item \textbf{Single-Transaction Online Stream Profiling ($N=1$ transaction):} Simulates point-of-sale (POS) real-time credit card authorization. Evaluates the true latency experienced by a single customer at checkout.
+    \item \textbf{Latency Decomposition:} For GraphSAGE, the total per-transaction latency $\tau_{\text{total}}$ is explicitly broken down into its two constituent phases:
+    \begin{equation}
+    \tau_{\text{total}} = \tau_{\text{sampling}} + \tau_{\text{forward}}
+    \end{equation}
+    where $\tau_{\text{sampling}}$ measures dynamic multi-hop neighborhood extraction and tensor collation, and $\tau_{\text{forward}}$ measures GPU/CPU matrix multiplication through the neural layers.
+\end{enumerate}
+
+\subsection{Cold-Start \& Isolated Nodes Robustness Analysis}
+A pivotal empirical inquiry rarely investigated in GNN literature is the \textbf{Cold-Start Degradation Phenomenon}. 
+
+\paragraph{Real-World Scenario:} Consider a legitimate consumer who issues a transaction using a newly activated credit card on a newly purchased mobile phone, or a criminal who uses a one-time virtual burner card. In the transaction graph, this transaction shares no historical attributes with any prior transaction. Consequently, its node degree is zero:
+\begin{equation}
+\text{deg}(v) = |\mathcal{N}(v)| = 0 \quad (\text{Isolated Node})
+\end{equation}
+\paragraph{Differential Impact on Architectures:}
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Behavior of GraphSAGE:} Because $\mathcal{N}(v) = \emptyset$, the neighborhood aggregation vector collapses to zero: $h_{\mathcal{N}(v)}^{(k)} = \mathbf{0}$. The model degenerates entirely to a feed-forward multi-layer perceptron (MLP) operating exclusively on self-features $h_v^{(0)}$, forfeiting all relational signal.
+    \item \textbf{Behavior of XGBoost:} XGBoost splits strictly on tabular feature thresholds without any dependence on topological connectivity. Its decision path is entirely unaffected by whether the card is new or historically interconnected.
+\end{itemize}
+This research partitions the test set into two distinct subsets:
+\begin{equation}
+V_{\text{isolated}} = \{v \in V_{\text{test}} \mid \text{deg}(v) = 0\} \quad \text{vs.} \quad V_{\text{connected}} = \{v \in V_{\text{test}} \mid \text{deg}(v) \ge 3\}
+\end{equation}
+By evaluating PR-AUC and ROC-AUC across both subsets independently, the manuscript will delineate the exact topological threshold at which GNN message passing transitions from an asset into an overhead liability.
+
+% =========================================================================
+% SECTION 5: SYSTEM ARCHITECTURE & REPRODUCIBILITY ENGINEERING
+% =========================================================================
+\section{System Architecture \& Engineering Implementation}
+
+\subsection{Repository and Codebase Topology}
+The technical implementation follows a production-grade, modular directory layout designed for one-click reproducibility:
+
+\begin{verbatim}
+graphsage-vs-xgboost-fraud-detection/
+├── initial_report.txt                   <- LaTeX Technical Proposal Document
+├── initial_report.tex                   <- Standard LaTeX Source File
+├── README.md                            <- Comprehensive Replication & Setup Guide
+├── requirements.txt                     <- Exact Locked Python Dependencies
+├── run_all.sh                           <- One-Command Automated Shell Pipeline
+├── main.py                              <- Headless Execution & Orchestration Script
+├── experiments_and_visualizations.ipynb <- Interactive Cell-by-Cell Jupyter Notebook
+├── src/
+│   ├── __init__.py
+│   ├── config.py                        <- Global Seeds, Hyperparameters, Paths
+│   ├── preprocessing.py                 <- Causal Temporal Split & Leak-Free Scaler
+│   ├── graph_builder.py                 <- Causal Graph Builder & Anti-Supernode Engine
+│   ├── models.py                        <- LR, RF, XGBoost, GraphSAGE, and GAT Models
+│   ├── benchmark.py                     <- Metrics, Dual-Latency Timer & t-Tests
+│   └── visualization.py                 <- Publication Figures Generator (300 DPI)
+├── models/
+│   ├── native/                          <- Native Checkpoints (.pt, .json, .joblib)
+│   └── onnx/                            <- ONNX Runtime Optimized Artifacts (.onnx)
+└── results/
+    ├── tables/                          <- Exported Tables (CSV and LaTeX .tex)
+    └── figures/                         <- High-Resolution Plots (PNG and PDF)
+\end{verbatim}
+
+\subsection{The Hybrid Development Paradigm: Modular Scripts vs. Jupyter Notebooks}
+To reconcile the conflicting demands of academic exploration and headless automated verification:
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Core Engine (\texttt{src/} Modules):} All data processing, model logic, training routines, and benchmarking procedures are encapsulated into modular, pure Python modules. This prevents state contamination and enables automated testing.
+    \item \textbf{Interactive Demonstration (\texttt{experiments\_and\_visualizations.ipynb}):} Designed for visual exploration and thesis defense presentations. Imports directly from \texttt{src/}, executing the pipeline cell by cell while rendering graphs and performance metrics inline.
+    \item \textbf{Headless Orchestrator (\texttt{main.py} \& \texttt{run\_all.sh}):} Provides a command-line interface (CLI) with arguments (\texttt{--mode prototype|full}, \texttt{--ablation}, \texttt{--latency}) for unattended execution on remote servers or Kaggle kernels.
+\end{itemize}
+
+\subsection{Model Serialization Rationale: Native Checkpoints vs. ONNX Runtime}
+A major architectural decision concerns model persistence for production reusability:
+
+\paragraph{Tabular Models (XGBoost, Random Forest, Logistic Regression):}
+Tabular models are exported dual-format:
+\begin{enumerate}
+    \item \textbf{Native Storage:} Serialized via \texttt{joblib} or native XGBoost JSON (\texttt{xgboost\_model.json}).
+    \item \textbf{ONNX Storage:} Converted via \texttt{skl2onnx} and \texttt{onnxmltools} into \texttt{.onnx} binary graphs. This permits deployment into ultra-low latency C++ or Go microservices using \texttt{onnxruntime}, stripping Python runtime overhead.
+\end{enumerate}
+
+\paragraph{Graph Neural Networks (GraphSAGE \& GAT in PyTorch Geometric):}
+For GNNs, \textbf{Native PyTorch State Dictionaries (\texttt{.pt})} are enforced as the primary serialization standard. Standard ONNX operators do not natively support dynamic, sparse message-passing aggregations (such as CUDA scatter/gather kernels in \texttt{torch\_scatter}) across irregular graphs. Enforcing native PyTorch checkpoints guarantees $100\%$ numerical reproducibility, instantaneous weight reloading, and full support for PyG \texttt{NeighborLoader} pipelines without conversion fragility.
+
+\subsection{Memory Optimization Protocol for Hardware Constraints}
+To execute the benchmark efficiently on constrained development workstations without triggering virtual memory paging or kernel memory faults:
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Type Downcasting:} IEEE-CIS loads with 64-bit numerical types by default ($\sim 1.8\text{ GB}$ raw memory). We execute automated type downcasting: \texttt{float64} $\to$ \texttt{float32}, \texttt{int64} $\to$ \texttt{int32}/\texttt{int16}. This contracts in-memory DataFrame consumption below $750\text{ MB}$.
+    \item \textbf{Vectorized Graph Construction:} Avoids naive Python nested loops by utilizing high-performance \texttt{pandas.groupby()} index grouping, projecting pre-filtered edges directly into contiguous NumPy arrays before PyTorch tensor conversion.
+    \item \textbf{Staged Prototyping Pipeline:} Development and parameter verification execute initially on the chronological \textbf{100,000-transaction prototype split} ($\sim 45\text{ seconds}$ run time), preceding the final full-scale \textbf{590,540-transaction} benchmark.
+\end{enumerate}
+
+% =========================================================================
+% SECTION 6: PROPOSED ADVANCED EXTENSIONS
+% =========================================================================
+\section{Proposed Advanced Research Extension: The Hybrid Pipeline}
+
+In addition to the primary pairwise comparison, this study proposes an advanced architectural hybrid: the \textbf{GraphSAGE-Boosted Hybrid Framework}:
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Representation Extraction:} After training the inductive GraphSAGE model on the training split, we freeze its parameters and execute a single-pass forward propagation through Layer 2 to extract the $128$-dimensional node embeddings:
+    \begin{equation}
+    \mathbf{z}_v = h_v^{(2)} \in \mathbb{R}^{128}, \quad \forall v \in V
+    \end{equation}
+    \item \textbf{Feature Space Concatenation:} The latent topological embeddings $\mathbf{z}_v$ are concatenated with the original tabular feature vector $\mathbf{x}_v^{\text{tab}} \in \mathbb{R}^d$:
+    \begin{equation}
+    \mathbf{x}_v^{\text{hybrid}} = \left[ \mathbf{x}_v^{\text{tab}} \;\Big\|\; \mathbf{z}_v \right] \in \mathbb{R}^{d + 128}
+    \end{equation}
+    \item \textbf{GBDT Classification:} A secondary XGBoost model is trained on this enriched hybrid manifold.
+\end{enumerate}
+This hybrid extension directly addresses whether graph structure is superior as an \textit{end-to-end classifier} or as a \textit{self-supervised topological feature extractor} for gradient boosted decision trees.
+
+% =========================================================================
+% REFERENCES
+% =========================================================================
+\begin{thebibliography}{99}
+\bibitem{hamilton2017inductive}
+W.~Hamilton, Z.~Ying, and J.~Leskovec, ``Inductive representation learning on large graphs,'' in \textit{Advances in Neural Information Processing Systems (NeurIPS)}, vol.~30, 2017.
+
+\bibitem{chen2016xgboost}
+T.~Chen and C.~Guestrin, ``XGBoost: A scalable tree boosting system,'' in \textit{ACM SIGKDD International Conference on Knowledge Discovery and Data Mining}, 2016, pp. 785--794.
+
+\bibitem{velickovic2018graph}
+P.~Veli{\v{c}}kovi{\'{c}}, G.~Cucurull, A.~Casanova, A.~Romero, P.~Li{\`{o}}, and Y.~Bengio, ``Graph attention networks,'' in \textit{International Conference on Learning Representations (ICLR)}, 2018.
+
+\bibitem{wang2019semi}
+D.~Wang, J.~Lin, P.~Cui, Q.~Jia, Z.~Wang, Y.~Fang, Q.~Yu, J.~Zhou, and S.~Yang, ``A semi-supervised graph attentional network for financial fraud detection,'' in \textit{IEEE International Conference on Data Mining (ICDM)}, 2019.
+
+\bibitem{fey2019fast}
+M.~Fey and J.~E. Lenssen, ``Fast graph representation learning with PyTorch Geometric,'' in \textit{ICLR Workshop on Representation Learning on Graphs and Manifolds}, 2019.
+\end{thebibliography}
+
+\end{document}

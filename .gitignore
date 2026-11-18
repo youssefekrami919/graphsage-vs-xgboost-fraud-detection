@@ -1,0 +1,48 @@
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+
+# === Jupyter ===
+.ipynb_checkpoints/
+
+# === Data (too large for GitHub) ===
+*.csv
+*.zip
+
+# === Model checkpoints (large binaries) ===
+models/native/*.pt
+models/native/*.pth
+models/native/*.json
+models/native/*.joblib
+models/onnx/*.onnx
+
+# === LaTeX auxiliary files ===
+*.aux
+*.log
+*.out
+*.toc
+*.lot
+*.lof
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+
+# === OS junk ===
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === IDE ===
+.vscode/
+.idea/
+
+# === Virtual environments ===
+venv/
+env/
+.venv/
