@@ -12,6 +12,7 @@ All generated plots follow Elsevier/IEEE academic styling guidelines:
 """
 
 import os
+import shutil
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -348,3 +349,185 @@ def plot_cold_start_comparison(robustness_df: pd.DataFrame, config: dict) -> str
     plt.close(fig)
     print(f"[VIZ] Saved -> {save_path}")
     return save_path
+
+
+# =========================================================================
+# Fig 04 (Paper): GraphSAGE Epoch Training Curves
+# =========================================================================
+def plot_graphsage_training_curves(history: dict, config: dict) -> str:
+    """
+    Plot training loss and validation AUC curves across epochs with early stopping marker.
+    """
+    _ensure_dir(config["figures_dir"])
+    epochs = history.get("epochs", [])
+    if not epochs:
+        print("[VIZ] Warning: Empty training history for GraphSAGE.")
+        return ""
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5), dpi=config["figure_dpi"])
+
+    # Loss curve
+    ax1.plot(epochs, history["train_loss"], "o-", color="#d62728", lw=2, label="Train Loss (Weighted BCE)")
+    ax1.set_xlabel("Epoch")
+    ax1.set_ylabel("Loss")
+    ax1.set_title("GraphSAGE Optimization Loss")
+    ax1.legend(loc="upper right")
+
+    # Validation AUC curve
+    ax2.plot(epochs, history["val_auc"], "s-", color="#1f77b4", lw=2, label="Validation ROC-AUC")
+    best_epoch = history.get("best_epoch", epochs[-1])
+    best_val_auc = history.get("best_val_auc", max(history["val_auc"]))
+    ax2.axvline(x=best_epoch, color="forestgreen", linestyle="--", label=f"Best Checkpoint (Ep {best_epoch}, AUC {best_val_auc:.4f})")
+    ax2.set_xlabel("Epoch")
+    ax2.set_ylabel("ROC-AUC")
+    ax2.set_title("GraphSAGE Validation ROC-AUC Trajectory")
+    ax2.legend(loc="lower right")
+
+    save_path = os.path.join(config["figures_dir"], "fig04_graphsage_training_curves.png")
+    fig.savefig(save_path, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[VIZ] Saved -> {save_path}")
+    return save_path
+
+
+# =========================================================================
+# Fig 07 (Paper): Financial Savings Decomposition (Hook 3)
+# =========================================================================
+def plot_financial_savings_decomposition(df_financial: pd.DataFrame, config: dict) -> str:
+    """
+    Grouped bar chart showing Saved Fraud Dollars ($) vs. False-Positive Investigation Cost ($)
+    and Net Financial Savings ($) across models.
+    """
+    _ensure_dir(config["figures_dir"])
+    # Filter out delta row if present
+    plot_df = df_financial[~df_financial["Model"].str.contains("Delta", case=False, na=False)].copy()
+
+    fig, ax = plt.subplots(figsize=(10, 6), dpi=config["figure_dpi"])
+    x = np.arange(len(plot_df))
+    width = 0.25
+
+    ax.bar(x - width, plot_df["Saved Fraud ($)"], width, label="Saved Fraud ($)", color="#2ca02c")
+    ax.bar(x, plot_df["FP Cost ($)"], width, label="False-Positive Cost ($5/alert)", color="#d62728")
+    ax.bar(x + width, plot_df["Net Savings ($)"], width, label="Net Financial Savings ($)", color="#1f77b4")
+
+    ax.set_ylabel("USD ($)")
+    ax.set_title("Cost-Sensitive Financial Savings Breakdown across Architectures")
+    ax.set_xticks(x)
+    ax.set_xticklabels(plot_df["Model"], rotation=15, ha="right", fontweight="bold")
+    ax.legend(loc="upper left")
+
+    # Add numeric labels on bars
+    for i in range(len(plot_df)):
+        net_val = plot_df["Net Savings ($)"].iloc[i]
+        ax.text(x[i] + width, net_val + (max(plot_df["Saved Fraud ($)"]) * 0.02),
+                f"${net_val:,.0f}", ha="center", va="bottom", fontsize=9, fontweight="bold")
+
+    save_path = os.path.join(config["figures_dir"], "fig07_financial_savings_decomposition.png")
+    fig.savefig(save_path, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[VIZ] Saved -> {save_path}")
+    return save_path
+
+
+# =========================================================================
+# Fig 08 (Paper): Cost Sensitivity Curve (c_FP Sweep)
+# =========================================================================
+def plot_cost_sensitivity(df_sweep: pd.DataFrame, config: dict) -> str:
+    """
+    Plots Net Financial Savings vs. False-Positive alert cost c_FP ($1 to $25),
+    showing break-even points and financial robustness frontiers.
+    """
+    _ensure_dir(config["figures_dir"])
+    fig, ax = plt.subplots(figsize=(9, 6), dpi=config["figure_dpi"])
+
+    c_fp = df_sweep["c_fp"]
+    colors = {
+        "XGBoost": "#1f77b4",
+        "RandomForest": "#2ca02c",
+        "LogisticRegression": "#7f7f7f",
+        "GraphSAGE": "#d62728",
+        "Hybrid": "#ff7f0e",
+    }
+
+    for col in df_sweep.columns:
+        if col.startswith("NetSavings_"):
+            model_name = col.replace("NetSavings_", "")
+            c = colors.get(model_name, "#333333")
+            ax.plot(c_fp, df_sweep[col], label=model_name, color=c, lw=2.2)
+
+    ax.axhline(0, color="black", linestyle="--", alpha=0.5, label="Break-Even ($0)")
+    ax.set_xlabel("Operational Cost per Alert $c_{FP}$ ($)")
+    ax.set_ylabel("Net Financial Savings ($)")
+    ax.set_title("Operational Robustness: Net Savings under Varying Alert Costs ($1 - $25)")
+    ax.legend(loc="upper right", frameon=True)
+
+    save_path = os.path.join(config["figures_dir"], "fig08_cost_sensitivity.png")
+    fig.savefig(save_path, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[VIZ] Saved -> {save_path}")
+    return save_path
+
+
+# =========================================================================
+# Fig 09 (Paper): XGBoost Feature Importance (Explainability Pillar)
+# =========================================================================
+def plot_feature_importance(xgb_model, feature_names: list, config: dict, top_k: int = 20) -> str:
+    """
+    Plots the top K features ranked by Gain from the trained XGBoost model,
+    providing empirical evidence for tabular dominance.
+    """
+    _ensure_dir(config["figures_dir"])
+    booster = xgb_model.get_booster()
+    score_dict = booster.get_score(importance_type="gain")
+
+    # Map f0, f1... to original feature names
+    named_scores = {}
+    for feat_id, gain in score_dict.items():
+        if feat_id.startswith("f") and feat_id[1:].isdigit():
+            idx = int(feat_id[1:])
+            name = feature_names[idx] if idx < len(feature_names) else feat_id
+        else:
+            name = feat_id
+        named_scores[name] = gain
+
+    sorted_feats = sorted(named_scores.items(), key=lambda x: x[1], reverse=True)[:top_k]
+    names = [x[0] for x in reversed(sorted_feats)]
+    scores = [x[1] for x in reversed(sorted_feats)]
+
+    fig, ax = plt.subplots(figsize=(9, 7), dpi=config["figure_dpi"])
+    y_pos = np.arange(len(names))
+    ax.barh(y_pos, scores, color="#1f77b4", alpha=0.85)
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(names, fontsize=9)
+    ax.set_xlabel("Gain (Relative Information Contribution)")
+    ax.set_title(f"XGBoost Feature Importance: Top {top_k} Features by Gain")
+
+    save_path = os.path.join(config["figures_dir"], "fig09_feature_importance.png")
+    fig.savefig(save_path, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[VIZ] Saved -> {save_path}")
+    return save_path
+
+
+# =========================================================================
+# Paper Figure Aliases (Appendix A.2 Compliance)
+# =========================================================================
+def create_paper_figure_aliases(config: dict):
+    """
+    Creates duplicate alias copies matching the exact numbering scheme in Appendix A.2
+    without deleting any existing figures.
+    """
+    fdir = config["figures_dir"]
+    mappings = [
+        ("fig2_temporal_distribution.png", "fig01_chronological_split.png"),
+        ("fig1_degree_distribution.png", "fig02_graph_construction.png"),
+        ("fig3_pr_roc_curves.png", "fig03_roc_pr_curves.png"),
+        ("fig5_latency_breakdown.png", "fig05_latency_decomposition.png"),
+        ("fig7_cold_start_analysis.png", "fig06_coldstart_comparison.png"),
+    ]
+    for src_name, dst_name in mappings:
+        src_path = os.path.join(fdir, src_name)
+        dst_path = os.path.join(fdir, dst_name)
+        if os.path.exists(src_path):
+            shutil.copyfile(src_path, dst_path)
+            print(f"[VIZ] Created paper alias: {dst_name} -> {src_name}")
