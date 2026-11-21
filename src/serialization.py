@@ -173,7 +173,16 @@ def train_hybrid_model(
     y = data_dict["y"]
     X_tab = data_dict["X_tabular"]
 
-    n_tr = len(tr)
+    # For full scale, cap training slice to 100k transactions to prevent heap exhaustion
+    # while preserving full feature representation and evaluating on 100% of test split
+    max_train_samples = 100_000
+    if len(tr) > max_train_samples:
+        tr_sub = tr[:max_train_samples]
+        print(f"  -> Training slice capped to {max_train_samples:,} transactions for secondary XGBoost efficiency")
+    else:
+        tr_sub = tr
+
+    n_tr = len(tr_sub)
     n_va = len(va)
     n_te = len(te)
     n_feat = X_tab.shape[1]
@@ -186,17 +195,17 @@ def train_hybrid_model(
     X_hybrid_tr[:, n_feat:] = Z_embeddings[:n_tr]
 
     X_hybrid_va = np.empty((n_va, tot_feat), dtype=np.float32)
-    X_hybrid_va[:, :n_feat] = X_tab[n_tr : n_tr + n_va]
-    X_hybrid_va[:, n_feat:] = Z_embeddings[n_tr : n_tr + n_va]
+    X_hybrid_va[:, :n_feat] = X_tab[len(tr) : len(tr) + n_va]
+    X_hybrid_va[:, n_feat:] = Z_embeddings[len(tr) : len(tr) + n_va]
 
     X_hybrid_te = np.empty((n_te, tot_feat), dtype=np.float32)
-    X_hybrid_te[:, :n_feat] = X_tab[n_tr + n_va : n_tr + n_va + n_te]
-    X_hybrid_te[:, n_feat:] = Z_embeddings[n_tr + n_va : n_tr + n_va + n_te]
+    X_hybrid_te[:, :n_feat] = X_tab[len(tr) + n_va :]
+    X_hybrid_te[:, n_feat:] = Z_embeddings[len(tr) + n_va :]
 
     del Z_embeddings
     gc.collect()
 
-    pos_weight = float((y[tr] == 0).sum() / max((y[tr] == 1).sum(), 1))
+    pos_weight = float((y[tr_sub] == 0).sum() / max((y[tr_sub] == 1).sum(), 1))
 
     print("[HYBRID] Training secondary XGBoost on hybrid features ...")
     hybrid_xgb = xgb.XGBClassifier(
@@ -215,7 +224,7 @@ def train_hybrid_model(
     )
     t0 = time.time()
     hybrid_xgb.fit(
-        X_hybrid_tr, y[tr],
+        X_hybrid_tr, y[tr_sub],
         eval_set=[(X_hybrid_va, y[va])],
         verbose=False,
     )
