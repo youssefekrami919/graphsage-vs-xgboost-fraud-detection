@@ -58,7 +58,6 @@ from src.visualization import (
     plot_financial_savings_decomposition,
     plot_cost_sensitivity,
     plot_feature_importance,
-    create_paper_figure_aliases,
 )
 from src.serialization import (
     save_native_models,
@@ -436,10 +435,6 @@ def main():
     save_native_models(tabular_models, graphsage_model, gat_model, config, hybrid_model=hybrid_model)
     export_tabular_to_onnx(tabular_models, n_features=data_dict["X_tabular"].shape[1], config=config)
 
-    # ------------------------------------------------------------------
-    # Step 14: Finalize Paper Figure Aliases (Appendix A.2)
-    # ------------------------------------------------------------------
-    create_paper_figure_aliases(config)
 
     t_total = time.time() - t_pipeline_start
     print("\n" + "=" * 75)

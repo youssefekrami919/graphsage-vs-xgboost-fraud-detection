@@ -1,14 +1,17 @@
 """
 Publication-quality visualization generation (300 DPI) for academic reports and papers.
 
-All generated plots follow Elsevier/IEEE academic styling guidelines:
-  Fig 1: Log-log degree distribution (anti-supernode proof).
-  Fig 2: Chronological transaction volume and fraud rate over time (leak-free split visualization).
-  Fig 3: Dual Precision-Recall (PR) and ROC curves across all models.
-  Fig 4: Accuracy vs. Inference Latency Trade-off (The Pareto Frontier plot).
-  Fig 5: GNN Latency Decomposition (Neighborhood sampling vs. Forward pass).
-  Fig 6: Edge-Type Ablation Study (card1 vs. DeviceInfo vs. P_emaildomain vs. Combined).
-  Fig 7: Cold-Start / Isolated Nodes Robustness Analysis (degree = 0 vs. degree >= 3).
+All generated plots follow Elsevier/IEEE academic styling guidelines with unified two-digit naming:
+  Fig 01: Chronological transaction volume and fraud rate over time (leak-free split visualization).
+  Fig 02: Log-log degree distribution and anti-supernode truncation.
+  Fig 03: Dual Precision-Recall (PR) and ROC curves across all models.
+  Fig 04: Accuracy vs. Inference Latency Trade-off (The Pareto Frontier plot).
+  Fig 04: GraphSAGE Epoch Training Curves (Loss and Validation PR-AUC).
+  Fig 05: GNN Latency Decomposition (Neighborhood sampling vs. Forward pass).
+  Fig 06: Cold-Start / Isolated Nodes Robustness Analysis (degree = 0 vs. degree >= 3).
+  Fig 07: Cost-Sensitive Financial Savings Breakdown (Hook 3).
+  Fig 08: Cost Sensitivity Curve (c_FP Parameter Sweep).
+  Fig 09: XGBoost Feature Importance (Explainability Pillar).
 """
 
 import os
@@ -85,7 +88,7 @@ def plot_degree_distribution(graph_data, config: dict) -> str:
             transform=ax.transAxes, bbox=dict(boxstyle="round,pad=0.5", facecolor="white", alpha=0.8))
     ax.legend(loc="upper right")
 
-    save_path = os.path.join(config["figures_dir"], "fig1_degree_distribution.png")
+    save_path = os.path.join(config["figures_dir"], "fig02_graph_construction.png")
     fig.savefig(save_path, bbox_inches="tight")
     plt.close(fig)
     print(f"[VIZ] Saved -> {save_path}")
@@ -143,7 +146,7 @@ def plot_temporal_fraud_distribution(data_dict: dict, config: dict) -> str:
     ax1.text((val_end_t + timestamps.max()) * 0.5, y_top, "Test (10%)", horizontalalignment="center", fontweight="bold")
 
     plt.title("Temporal Evolution of Transaction Volume and Fraud Prevalence")
-    save_path = os.path.join(config["figures_dir"], "fig2_temporal_distribution.png")
+    save_path = os.path.join(config["figures_dir"], "fig01_chronological_split.png")
     fig.savefig(save_path, bbox_inches="tight")
     plt.close(fig)
     print(f"[VIZ] Saved -> {save_path}")
@@ -189,7 +192,7 @@ def plot_pr_and_roc_curves(predictions_dict: dict, y_true: np.ndarray, config: d
     ax_roc.set_title("Receiver Operating Characteristic (ROC) Curves")
     ax_roc.legend(loc="lower right", frameon=True)
 
-    save_path = os.path.join(config["figures_dir"], "fig3_pr_roc_curves.png")
+    save_path = os.path.join(config["figures_dir"], "fig03_roc_pr_curves.png")
     fig.savefig(save_path, bbox_inches="tight")
     plt.close(fig)
     print(f"[VIZ] Saved -> {save_path}")
@@ -243,7 +246,7 @@ def plot_accuracy_latency_tradeoff(summary_df: pd.DataFrame, config: dict) -> st
     ax.set_title("Accuracy vs. Inference Latency Trade-Off on IEEE-CIS")
     ax.legend(loc="lower left", frameon=True)
 
-    save_path = os.path.join(config["figures_dir"], "fig4_accuracy_latency_tradeoff.png")
+    save_path = os.path.join(config["figures_dir"], "fig04_accuracy_latency_tradeoff.png")
     fig.savefig(save_path, bbox_inches="tight")
     plt.close(fig)
     print(f"[VIZ] Saved -> {save_path}")
@@ -283,7 +286,7 @@ def plot_latency_breakdown(gnn_breakdown_dict: dict, config: dict) -> str:
         ax.text(x[i], sampling_times[i] * 0.5, f"{samp_pct:.1f}%", ha="center", va="center", color="black", fontweight="bold")
         ax.text(x[i], sampling_times[i] + forward_times[i] * 0.5, f"{fwd_pct:.1f}%", ha="center", va="center", color="white", fontweight="bold")
 
-    save_path = os.path.join(config["figures_dir"], "fig5_latency_breakdown.png")
+    save_path = os.path.join(config["figures_dir"], "fig05_latency_decomposition.png")
     fig.savefig(save_path, bbox_inches="tight")
     plt.close(fig)
     print(f"[VIZ] Saved -> {save_path}")
@@ -313,7 +316,7 @@ def plot_edge_ablation(ablation_df: pd.DataFrame, config: dict) -> str:
     ax.set_xticklabels(ablation_df["Edge_Configuration"], rotation=15, ha="right", fontweight="bold")
     ax.legend(loc="lower right")
 
-    save_path = os.path.join(config["figures_dir"], "fig6_edge_ablation.png")
+    save_path = os.path.join(config["figures_dir"], "fig06_edge_ablation.png")
     fig.savefig(save_path, bbox_inches="tight")
     plt.close(fig)
     print(f"[VIZ] Saved -> {save_path}")
@@ -344,7 +347,7 @@ def plot_cold_start_comparison(robustness_df: pd.DataFrame, config: dict) -> str
     ax.set_title("Cold-Start Robustness: Isolated vs. Connected Transactions")
     ax.legend(title="Model", frameon=True)
 
-    save_path = os.path.join(config["figures_dir"], "fig7_cold_start_analysis.png")
+    save_path = os.path.join(config["figures_dir"], "fig06_coldstart_comparison.png")
     fig.savefig(save_path, bbox_inches="tight")
     plt.close(fig)
     print(f"[VIZ] Saved -> {save_path}")
@@ -509,25 +512,4 @@ def plot_feature_importance(xgb_model, feature_names: list, config: dict, top_k:
     return save_path
 
 
-# =========================================================================
-# Paper Figure Aliases (Appendix A.2 Compliance)
-# =========================================================================
-def create_paper_figure_aliases(config: dict):
-    """
-    Creates duplicate alias copies matching the exact numbering scheme in Appendix A.2
-    without deleting any existing figures.
-    """
-    fdir = config["figures_dir"]
-    mappings = [
-        ("fig2_temporal_distribution.png", "fig01_chronological_split.png"),
-        ("fig1_degree_distribution.png", "fig02_graph_construction.png"),
-        ("fig3_pr_roc_curves.png", "fig03_roc_pr_curves.png"),
-        ("fig5_latency_breakdown.png", "fig05_latency_decomposition.png"),
-        ("fig7_cold_start_analysis.png", "fig06_coldstart_comparison.png"),
-    ]
-    for src_name, dst_name in mappings:
-        src_path = os.path.join(fdir, src_name)
-        dst_path = os.path.join(fdir, dst_name)
-        if os.path.exists(src_path):
-            shutil.copyfile(src_path, dst_path)
-            print(f"[VIZ] Created paper alias: {dst_name} -> {src_name}")
+
