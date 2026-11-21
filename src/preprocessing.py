@@ -11,6 +11,7 @@ Key safeguards:
      - X_neural:  missing values filled with training median + StandardScaler.
 """
 
+import gc
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import StandardScaler, LabelEncoder
@@ -128,15 +129,19 @@ def load_and_preprocess(config: dict) -> dict:
     for col in cat_cols:
         X_df[col] = X_df[col].fillna("__MISSING__").astype(str)
         le = LabelEncoder()
-        X_df[col] = le.fit_transform(X_df[col])
+        X_df[col] = le.fit_transform(X_df[col]).astype(np.float32)
         label_encoders[col] = le
+
+    X_cat_raw = X_df[cat_cols].values.astype(np.float32)
 
     # ------------------------------------------------------------------
     # 9. Build X_tabular (for tree models: impute with -999)
     # ------------------------------------------------------------------
+    print("[PREPROCESSING] Building X_tabular ...")
     X_num_raw = X_df[num_cols].fillna(-999.0).values.astype(np.float32)
-    X_cat_raw = X_df[cat_cols].values.astype(np.float32)
     X_tabular = np.hstack([X_num_raw, X_cat_raw])
+    del X_num_raw
+    gc.collect()
 
     # ------------------------------------------------------------------
     # 10. Build X_neural (for neural models: median imputation + StandardScaler)
@@ -147,17 +152,19 @@ def load_and_preprocess(config: dict) -> dict:
     # Compute training medians for imputation
     train_medians = X_df[num_cols].iloc[train_idx].median()
     X_num_imputed = X_df[num_cols].fillna(train_medians).values.astype(np.float32)
+    del X_df
+    gc.collect()
 
-    # Fit scaler only on training rows
-    scaler = StandardScaler()
-    X_num_scaled = np.zeros_like(X_num_imputed)
-    X_num_scaled[train_idx] = scaler.fit_transform(X_num_imputed[train_idx])
-    X_num_scaled[val_idx] = scaler.transform(X_num_imputed[val_idx])
-    X_num_scaled[test_idx] = scaler.transform(X_num_imputed[test_idx])
+    # In-place leak-free standardization fit strictly on train_idx
+    mean = np.mean(X_num_imputed[train_idx], axis=0, dtype=np.float64).astype(np.float32)
+    std = np.std(X_num_imputed[train_idx], axis=0, dtype=np.float64).astype(np.float32)
+    std[std == 0.0] = 1.0
+    X_num_imputed -= mean
+    X_num_imputed /= std
 
-    X_neural = np.hstack([X_num_scaled, X_cat_raw]).astype(np.float32)
-
-    del X_df, X_num_raw, X_num_imputed, X_num_scaled, X_cat_raw  # Free memory
+    X_neural = np.hstack([X_num_imputed, X_cat_raw])
+    del X_num_imputed, X_cat_raw
+    gc.collect()
 
     print(f"[PREPROCESSING] Feature dimensions -> X_tabular: {X_tabular.shape}, "
           f"X_neural: {X_neural.shape}")
