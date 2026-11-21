@@ -14,6 +14,7 @@ Features:
 """
 
 import os
+import time
 import joblib
 import numpy as np
 import torch
@@ -108,7 +109,9 @@ def export_tabular_to_onnx(tabular_models: dict, n_features: int, config: dict):
         # Export XGBoost
         if "XGBoost" in tabular_models:
             import onnxmltools
-            xgb_onnx = onnxmltools.convert_xgboost(tabular_models["XGBoost"], initial_types=initial_type)
+            from onnxmltools.convert.common.data_types import FloatTensorType as OxmlFloatTensorType
+            xgb_initial_type = [("float_input", OxmlFloatTensorType([None, n_features]))]
+            xgb_onnx = onnxmltools.convert_xgboost(tabular_models["XGBoost"], initial_types=xgb_initial_type)
             xgb_path = os.path.join(onnx_dir, "xgboost.onnx")
             with open(xgb_path, "wb") as f:
                 f.write(xgb_onnx.SerializeToString())
@@ -185,11 +188,13 @@ def train_hybrid_model(
         n_jobs=-1,
         verbosity=0,
     )
+    t0 = time.time()
     hybrid_xgb.fit(
         X_hybrid[tr], y[tr],
         eval_set=[(X_hybrid[va], y[va])],
         verbose=False,
     )
-    print(f"  -> Hybrid XGBoost trained (best iteration: {hybrid_xgb.best_iteration})")
+    t_hybrid = float(time.time() - t0)
+    print(f"  -> Hybrid XGBoost trained in {t_hybrid:.1f}s (best iteration: {hybrid_xgb.best_iteration})")
 
-    return hybrid_xgb, X_hybrid
+    return hybrid_xgb, X_hybrid, t_hybrid
