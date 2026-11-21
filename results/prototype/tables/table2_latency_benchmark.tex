@@ -1,0 +1,15 @@
+\begin{table}
+\caption{Inference Latency per 1,000 Transactions and Single-Sample Latency (Mean $\pm$ Std in ms)}
+\label{tab:latency_benchmark}
+\begin{tabular}{lrrrr}
+\toprule
+Model & Latency_per_1k_ms & Latency_Std_ms & Single_tx_ms & PR-AUC \\
+\midrule
+XGBoost & 3.7716 & 0.2872 & 0.9208 & 0.5012 \\
+RandomForest & 73.7296 & 0.8011 & 56.4264 & 0.3214 \\
+LogisticRegression & 0.3796 & 0.0468 & 0.1385 & 0.2505 \\
+GraphSAGE & 275.0493 & 12.3745 & 4.3918 & 0.2581 \\
+GAT & 258.9779 & 18.5013 & 7.4196 & 0.0843 \\
+\bottomrule
+\end{tabular}
+\end{table}

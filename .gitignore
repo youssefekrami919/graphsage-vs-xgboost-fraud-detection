@@ -14,13 +14,10 @@ build/
 # === Data (too large for GitHub) ===
 *.csv
 *.zip
+!results/**/*.csv
 
 # === Model checkpoints (large binaries) ===
-models/native/*.pt
-models/native/*.pth
-models/native/*.json
-models/native/*.joblib
-models/onnx/*.onnx
+models/
 
 # === LaTeX auxiliary files ===
 *.aux

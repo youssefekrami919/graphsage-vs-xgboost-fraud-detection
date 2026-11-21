@@ -1,0 +1,14 @@
+\begin{table}
+\caption{Performance Comparison on Isolated vs. Connected Transactions}
+\label{tab:cold_start_robustness}
+\begin{tabular}{lrrrrrr}
+\toprule
+Topology & Model & Count & ROC-AUC & PR-AUC & F1-Score & Balanced-Acc \\
+\midrule
+Isolated (Degree = 0) & XGBoost & 2752 & 0.8854 & 0.3458 & 0.2814 & 0.7523 \\
+Isolated (Degree = 0) & GraphSAGE & 2752 & 0.7605 & 0.0962 & 0.1143 & 0.6444 \\
+Connected (Degree >= 3) & XGBoost & 6730 & 0.8845 & 0.5595 & 0.3284 & 0.8149 \\
+Connected (Degree >= 3) & GraphSAGE & 6730 & 0.7815 & 0.2497 & 0.1117 & 0.7059 \\
+\bottomrule
+\end{tabular}
+\end{table}

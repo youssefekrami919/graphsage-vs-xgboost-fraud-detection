@@ -1,0 +1,13 @@
+\begin{table}
+\caption{Cold-Start and Structural Topology Robustness Metrics (Table 7)}
+\label{tab:coldstart_metrics}
+\begin{tabular}{lrrrrrrr}
+\toprule
+Model & Isolated Count & Isolated PR-AUC & Isolated ROC-AUC & Connected Count & Connected PR-AUC & Connected ROC-AUC & Delta PR-AUC (Conn - Iso) \\
+\midrule
+XGBoost & 2752 & 0.3458 & 0.8854 & 6730 & 0.5595 & 0.8845 & 0.2137 \\
+GraphSAGE & 2752 & 0.1156 & 0.7610 & 6730 & 0.3087 & 0.7948 & 0.1931 \\
+Delta (GraphSAGE - XGBoost) & 0 & -0.2303 & -0.1244 & 0 & -0.2508 & -0.0897 & -0.0206 \\
+\bottomrule
+\end{tabular}
+\end{table}

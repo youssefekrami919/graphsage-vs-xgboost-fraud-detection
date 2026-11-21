@@ -1,0 +1,6 @@
+Model,Batch 1k Latency (ms),Single Stream Latency (ms),Sampling Latency tau_sampling (ms),Forward Latency tau_forward (ms)
+XGBoost,3.77 +/- 0.29,0.92 +/- 0.05,N/A,0.92
+RandomForest,73.73 +/- 0.80,56.43 +/- 8.02,N/A,56.43
+LogisticRegression,0.38 +/- 0.05,0.14 +/- 0.00,N/A,0.14
+GraphSAGE,275.05 +/- 12.37,4.39 +/- 1.07,1.16,2.13
+GAT,258.98 +/- 18.50,7.42 +/- 1.21,1.46,4.69

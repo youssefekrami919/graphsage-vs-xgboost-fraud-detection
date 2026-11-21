@@ -1,0 +1,5 @@
+Entity Identifier,Raw Entities,Filtered Entities (2<=f<=500),Transactions Covered,Generated Directed Edges,Percentage of Graph Edges (%)
+card1,7677,4780,68924,901624,89.31
+DeviceInfo,866,557,4603,38170,3.78
+P_emaildomain,59,45,3924,69703,6.9
+Total (Deduplicated),8602,5382,77451,1006718,100.0
