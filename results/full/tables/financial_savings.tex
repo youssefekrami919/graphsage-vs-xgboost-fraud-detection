@@ -1,0 +1,17 @@
+\begin{table}
+\caption{Cost-Sensitive Financial Savings and Loss Prevention Breakdown (Table 8)}
+\label{tab:financial_savings}
+\begin{tabular}{lrrrrrrr}
+\toprule
+Model & Saved Fraud ($) & FP Cost ($) & FN Loss ($) & Net Savings ($) & Fraud Dollar Recall (%) & TP Count & FP Count \\
+\midrule
+XGBoost & 217197.1562 & 15175.0000 & 124256.1875 & 202022.1562 & 63.6096 & 1429 & 3035 \\
+RandomForest & 229086.7188 & 28855.0000 & 112366.6406 & 200231.7188 & 67.0917 & 1511 & 5771 \\
+LogisticRegression & 241132.4219 & 52100.0000 & 100320.9219 & 189032.4219 & 70.6194 & 1514 & 10420 \\
+GraphSAGE & 232883.7188 & 31715.0000 & 108569.6172 & 201168.7188 & 68.2037 & 1506 & 6343 \\
+GAT & 208770.7812 & 55910.0000 & 132682.5625 & 152860.7812 & 61.1418 & 1500 & 11182 \\
+Hybrid & 175958.5938 & 18040.0000 & 165494.7500 & 157918.5938 & 51.5322 & 1256 & 3608 \\
+Delta (GraphSAGE - XGBoost) & 15686.5625 & 16540.0000 & -15686.5703 & -853.4375 & 4.5941 & 77 & 3308 \\
+\bottomrule
+\end{tabular}
+\end{table}

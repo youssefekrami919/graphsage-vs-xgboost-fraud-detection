@@ -1,0 +1,16 @@
+\begin{table}
+\caption{Comparative Performance Benchmark on Inductive Test Set (Table 9)}
+\label{tab:overall_metrics}
+\begin{tabular}{lrrrrrr}
+\toprule
+Model & PR-AUC & ROC-AUC & F1-Score & Balanced-Acc & Training Duration (s) & p-value vs XGBoost \\
+\midrule
+XGBoost & 0.5392 & 0.8970 & 0.4280 & 0.7962 & 172.4000 & Baseline \\
+RandomForest & 0.4790 & 0.8805 & 0.3183 & 0.7906 & 162.7000 & -- \\
+LogisticRegression & 0.1486 & 0.8190 & 0.2140 & 0.7504 & 43.4000 & -- \\
+GraphSAGE & 0.4148 & 0.8613 & 0.2993 & 0.7845 & 2487.0000 & -- \\
+GAT & 0.2487 & 0.8217 & 0.2014 & 0.7405 & 2005.8000 & -- \\
+Hybrid & 0.4376 & 0.8287 & 0.3550 & 0.7520 & 36.6418 & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
