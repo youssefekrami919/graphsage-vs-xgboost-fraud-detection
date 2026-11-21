@@ -17,6 +17,8 @@ def generate_report():
 
 % --- Essential Packages ---
 \usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
 \usepackage[margin=1in]{geometry}
 \usepackage{amsmath,amssymb,amsfonts}
 \usepackage{booktabs}
@@ -24,7 +26,7 @@ def generate_report():
 \usepackage{graphicx}
 \usepackage{hyperref}
 \usepackage{xcolor}
-\usepackage{microtype}
+\usepackage[expansion=false]{microtype}
 \usepackage{fancyhdr}
 \usepackage{enumitem}
 \usepackage{array}
