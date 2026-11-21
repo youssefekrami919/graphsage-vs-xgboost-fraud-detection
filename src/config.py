@@ -43,18 +43,37 @@ def get_device() -> torch.device:
 _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _DATA_DIR = os.path.normpath(os.path.join(_PROJECT_ROOT, "..", "ieee-fraud-detection"))
 
+def configure_paths_for_mode(config: dict, mode: str = "prototype") -> dict:
+    """
+    Update results and models directory paths based on execution mode
+    ('prototype' or 'full') to avoid overwriting experimental outputs.
+    """
+    cfg = config.copy()
+    cfg["mode"] = mode
+    cfg["results_dir"] = os.path.join(_PROJECT_ROOT, "results", mode)
+    cfg["figures_dir"] = os.path.join(_PROJECT_ROOT, "results", mode, "figures")
+    cfg["tables_dir"] = os.path.join(_PROJECT_ROOT, "results", mode, "tables")
+    cfg["models_native_dir"] = os.path.join(_PROJECT_ROOT, "models", mode, "native")
+    cfg["models_onnx_dir"] = os.path.join(_PROJECT_ROOT, "models", mode, "onnx")
+
+    for directory in [cfg["figures_dir"], cfg["tables_dir"], cfg["models_native_dir"], cfg["models_onnx_dir"]]:
+        os.makedirs(directory, exist_ok=True)
+    return cfg
+
+
 CONFIG = {
     # --- Reproducibility ---
     "seed": 42,
+    "mode": "prototype",
 
     # --- Paths ---
     "project_root": _PROJECT_ROOT,
     "data_dir": _DATA_DIR,
-    "results_dir": os.path.join(_PROJECT_ROOT, "results"),
-    "figures_dir": os.path.join(_PROJECT_ROOT, "results", "figures"),
-    "tables_dir": os.path.join(_PROJECT_ROOT, "results", "tables"),
-    "models_native_dir": os.path.join(_PROJECT_ROOT, "models", "native"),
-    "models_onnx_dir": os.path.join(_PROJECT_ROOT, "models", "onnx"),
+    "results_dir": os.path.join(_PROJECT_ROOT, "results", "prototype"),
+    "figures_dir": os.path.join(_PROJECT_ROOT, "results", "prototype", "figures"),
+    "tables_dir": os.path.join(_PROJECT_ROOT, "results", "prototype", "tables"),
+    "models_native_dir": os.path.join(_PROJECT_ROOT, "models", "prototype", "native"),
+    "models_onnx_dir": os.path.join(_PROJECT_ROOT, "models", "prototype", "onnx"),
 
     # --- Data ---
     "subset_size": None,  # Set to 100_000 for prototype mode; None for full 590k

@@ -88,6 +88,7 @@ def load_and_preprocess(config: dict) -> dict:
     # ------------------------------------------------------------------
     raw_entities = df[config["edge_cols"]].copy()
     timestamps = df["TransactionDT"].values
+    transaction_amt = df["TransactionAmt"].values.astype(np.float32)
     y = df["isFraud"].values.astype(np.float32)
 
     print(f"[PREPROCESSING] Fraud rate: {y.mean() * 100:.2f}% "
@@ -168,6 +169,7 @@ def load_and_preprocess(config: dict) -> dict:
         "y": y,
         "raw_entities": raw_entities,
         "timestamps": timestamps,
+        "transaction_amt": transaction_amt,
         "train_idx": train_idx,
         "val_idx": val_idx,
         "test_idx": test_idx,
