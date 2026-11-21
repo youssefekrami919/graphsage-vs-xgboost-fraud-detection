@@ -43,12 +43,36 @@ graphsage-vs-xgboost-fraud-detection/
 │   ├── benchmark.py                        <- Metrics, latency timer, t-tests
 │   └── visualization.py                    <- Publication-quality figures (300 DPI)
 ├── models/
-│   ├── native/                             <- PyTorch (.pt), XGBoost (.json), sklearn (.joblib)
-│   └── onnx/                               <- ONNX Runtime artifacts (.onnx)
+│   ├── prototype/                          <- Checkpoints from 100k prototype run
+│   │   ├── native/                         <- PyTorch (.pt), XGBoost (.json), sklearn (.joblib)
+│   │   └── onnx/                           <- ONNX Runtime artifacts (.onnx)
+│   └── full/                               <- Checkpoints from full 590k benchmark
+│       ├── native/
+│       └── onnx/
 └── results/
-    ├── tables/                             <- CSV + LaTeX (.tex) tables
-    └── figures/                            <- PNG figures at 300 DPI
+    ├── prototype/                          <- Results from 100k prototype run
+    │   ├── tables/                         <- Tables 1, 2, 6, 7, 8, 9 (CSV + LaTeX .tex)
+    │   └── figures/                        <- Publication figures fig01 to fig09 (300 DPI)
+    └── full/                               <- Results from full 590k benchmark
+        ├── tables/
+        └── figures/
 ```
+
+## Hardware and Software Environment
+
+- **OS:** Windows 10/11 x64
+- **Host Device:** Dell G3 Laptop
+- **CPU:** Intel Multi-Core Processor (16 GB System RAM)
+- **GPU:** NVIDIA GeForce GTX 1650 (4096 MB VRAM)
+- **CUDA Runtime:** CUDA 12.1
+- **Python:** 3.11
+- **Core Frameworks:**
+  - `torch==2.5.1+cu121`
+  - `torch-geometric==2.8.1`
+  - `torch-scatter==2.1.2+pt25cu121`
+  - `torch-sparse==0.6.18+pt25cu121`
+  - `xgboost>=2.1.0`
+  - `scikit-learn>=1.7.0`
 
 ## Models Evaluated
 
