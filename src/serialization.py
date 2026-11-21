@@ -173,22 +173,25 @@ def train_hybrid_model(
     y = data_dict["y"]
     X_tab = data_dict["X_tabular"]
 
+    n_tr = len(tr)
+    n_va = len(va)
+    n_te = len(te)
     n_feat = X_tab.shape[1]
     n_emb = Z_embeddings.shape[1]
     tot_feat = n_feat + n_emb
 
-    # Direct in-place assignment without intermediate slice duplication
-    X_hybrid_tr = np.empty((len(tr), tot_feat), dtype=np.float32)
-    X_hybrid_tr[:, :n_feat] = X_tab[tr]
-    X_hybrid_tr[:, n_feat:] = Z_embeddings[tr]
+    # Basic contiguous slicing creates views with zero temporary memory overhead
+    X_hybrid_tr = np.empty((n_tr, tot_feat), dtype=np.float32)
+    X_hybrid_tr[:, :n_feat] = X_tab[:n_tr]
+    X_hybrid_tr[:, n_feat:] = Z_embeddings[:n_tr]
 
-    X_hybrid_va = np.empty((len(va), tot_feat), dtype=np.float32)
-    X_hybrid_va[:, :n_feat] = X_tab[va]
-    X_hybrid_va[:, n_feat:] = Z_embeddings[va]
+    X_hybrid_va = np.empty((n_va, tot_feat), dtype=np.float32)
+    X_hybrid_va[:, :n_feat] = X_tab[n_tr : n_tr + n_va]
+    X_hybrid_va[:, n_feat:] = Z_embeddings[n_tr : n_tr + n_va]
 
-    X_hybrid_te = np.empty((len(te), tot_feat), dtype=np.float32)
-    X_hybrid_te[:, :n_feat] = X_tab[te]
-    X_hybrid_te[:, n_feat:] = Z_embeddings[te]
+    X_hybrid_te = np.empty((n_te, tot_feat), dtype=np.float32)
+    X_hybrid_te[:, :n_feat] = X_tab[n_tr + n_va : n_tr + n_va + n_te]
+    X_hybrid_te[:, n_feat:] = Z_embeddings[n_tr + n_va : n_tr + n_va + n_te]
 
     del Z_embeddings
     gc.collect()

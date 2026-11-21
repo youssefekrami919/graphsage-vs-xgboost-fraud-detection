@@ -164,7 +164,7 @@ def main():
             hidden_channels=config["hidden_dim"],
             dropout=config["dropout"],
         ).to(device)
-        graphsage_model.load_state_dict(torch.load(gs_path, map_location=device))
+        graphsage_model.load_state_dict(torch.load(gs_path, map_location=device, weights_only=True))
         print("  -> GraphSAGE loaded successfully from disk.")
     else:
         print("\n>>> STAGE 4: Training Proposed Inductive GraphSAGE")
@@ -190,7 +190,7 @@ def main():
                 heads=config["gat_heads"],
                 dropout=config["dropout"],
             ).to(device)
-            gat_model.load_state_dict(torch.load(gat_path, map_location=device))
+            gat_model.load_state_dict(torch.load(gat_path, map_location=device, weights_only=True))
             print("  -> GAT loaded successfully from disk.")
         else:
             print("\n>>> STAGE 5: Training Appendix Baseline (GAT)")
