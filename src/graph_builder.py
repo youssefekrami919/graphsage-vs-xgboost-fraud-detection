@@ -12,6 +12,7 @@ Design principles:
   6. Vectorized implementation using pandas.groupby for performance.
 """
 
+import os
 import numpy as np
 import pandas as pd
 import torch
@@ -38,6 +39,7 @@ def build_causal_transaction_graph(data_dict: dict, config: dict) -> Data:
 
     all_src = []
     all_dst = []
+    edge_records = []
 
     print("[GRAPH] Building causal edges from entity columns ...")
     for col in config["edge_cols"]:
@@ -54,9 +56,13 @@ def build_causal_transaction_graph(data_dict: dict, config: dict) -> Data:
         valid_entities = freq[(freq > 1) & (freq <= config["max_entity_freq"])].index
         filtered = valid_series[valid_series.isin(valid_entities)]
 
-        print(f"    Entities before filtering: {len(freq):,}")
-        print(f"    Entities after filtering:  {len(valid_entities):,}")
-        print(f"    Transactions covered:      {len(filtered):,}")
+        raw_count = len(freq)
+        filt_count = len(valid_entities)
+        cov_count = len(filtered)
+
+        print(f"    Entities before filtering: {raw_count:,}")
+        print(f"    Entities after filtering:  {filt_count:,}")
+        print(f"    Transactions covered:      {cov_count:,}")
 
         # Group transaction indices by shared entity value
         # Use vectorized approach: build a DataFrame and use groupby
@@ -83,17 +89,59 @@ def build_causal_transaction_graph(data_dict: dict, config: dict) -> Data:
                         col_src.append(src_node)
                         col_dst.append(dst_node)
 
-        print(f"    Edges from {col}: {len(col_src):,}")
+        col_edge_count = len(col_src)
+        print(f"    Edges from {col}: {col_edge_count:,}")
+        edge_records.append({
+            "Entity Identifier": col,
+            "Raw Entities": raw_count,
+            "Filtered Entities (2<=f<=500)": filt_count,
+            "Transactions Covered": cov_count,
+            "Generated Directed Edges": col_edge_count,
+        })
+
         all_src.extend(col_src)
         all_dst.extend(col_dst)
 
     # ------------------------------------------------------------------
     # Deduplicate edges (a pair may share multiple entity columns)
     # ------------------------------------------------------------------
-    print(f"[GRAPH] Total raw edges (before dedup): {len(all_src):,}")
+    total_raw = len(all_src)
+    print(f"[GRAPH] Total raw edges (before dedup): {total_raw:,}")
     edge_index = torch.tensor([all_src, all_dst], dtype=torch.long)
     edge_index = torch.unique(edge_index, dim=1)
-    print(f"[GRAPH] Unique edges (after dedup):     {edge_index.shape[1]:,}")
+    unique_edge_count = edge_index.shape[1]
+    print(f"[GRAPH] Unique edges (after dedup):     {unique_edge_count:,}")
+
+    # Build Table 2: Edge Statistics DataFrame
+    stats_df = pd.DataFrame(edge_records)
+    stats_df["Percentage of Graph Edges (%)"] = (
+        (stats_df["Generated Directed Edges"] / max(total_raw, 1)) * 100.0
+    ).round(2)
+
+    total_row = pd.DataFrame([{
+        "Entity Identifier": "Total (Deduplicated)",
+        "Raw Entities": stats_df["Raw Entities"].sum(),
+        "Filtered Entities (2<=f<=500)": stats_df["Filtered Entities (2<=f<=500)"].sum(),
+        "Transactions Covered": stats_df["Transactions Covered"].sum(),
+        "Generated Directed Edges": unique_edge_count,
+        "Percentage of Graph Edges (%)": 100.0,
+    }])
+    stats_df = pd.concat([stats_df, total_row], ignore_index=True)
+
+    # Export Table 2 to results directory if configured
+    if "tables_dir" in config:
+        os.makedirs(config["tables_dir"], exist_ok=True)
+        csv_p = os.path.join(config["tables_dir"], "edge_statistics.csv")
+        tex_p = os.path.join(config["tables_dir"], "edge_statistics.tex")
+        stats_df.to_csv(csv_p, index=False)
+        with open(tex_p, "w", encoding="utf-8") as f:
+            f.write(stats_df.to_latex(
+                index=False,
+                caption="Causal Transaction Graph Construction Statistics across Entity Identifiers (Table 2)",
+                label="tab:edge_stats",
+                column_format="lrrrrr"
+            ))
+        print(f"[GRAPH] Table 2 saved -> {csv_p} and {tex_p}")
 
     # ------------------------------------------------------------------
     # Build node masks for train / val / test
@@ -133,6 +181,7 @@ def build_causal_transaction_graph(data_dict: dict, config: dict) -> Data:
     print(f"  Max In-Degree:    {degrees.max().item()}")
     print(f"  Isolated Nodes:   {isolated:,} ({isolated / n_nodes * 100:.1f}%)")
     print(f"  Connected (d>=3): {connected:,} ({connected / n_nodes * 100:.1f}%)")
+    graph_data.edge_stats_df = stats_df
     print("[GRAPH] Done.")
 
     return graph_data
