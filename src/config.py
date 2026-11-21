@@ -93,7 +93,7 @@ CONFIG = {
     "lr": 1e-3,
     "epochs": 25,
     "patience": 5,
-    "batch_size": 1024,
+    "batch_size": 2048,
     "fan_out": [15, 10],  # NeighborLoader sampling sizes [hop1, hop2]
 
     # --- GAT architecture (appendix baseline) ---

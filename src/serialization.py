@@ -14,6 +14,7 @@ Features:
 """
 
 import os
+import gc
 import time
 import joblib
 import numpy as np
@@ -135,7 +136,7 @@ def train_hybrid_model(
     """
     Executes the proposed Hybrid Architecture:
       1. Forward propagation through GraphSAGE to extract 128-dim node embeddings.
-      2. Concatenates embeddings with tabular features: X_hybrid = [X_tabular || Z_embeddings].
+      2. Concatenates embeddings with tabular features per partition.
       3. Fits an XGBoost model on the enriched manifold.
     """
     print("[HYBRID] Extracting GraphSAGE topological node embeddings ...")
@@ -151,25 +152,33 @@ def train_hybrid_model(
         shuffle=False,
     )
 
-    embeddings_list = []
+    n_nodes = graph_data.num_nodes
+    Z_embeddings = np.empty((n_nodes, 128), dtype=np.float32)
+    ptr = 0
+
     with torch.no_grad():
         for batch in loader:
             batch = batch.to(device)
             emb = graphsage_model.get_embeddings(batch.x, batch.edge_index)[: batch.batch_size]
-            embeddings_list.append(emb.cpu().numpy())
+            bsz = batch.batch_size
+            Z_embeddings[ptr : ptr + bsz] = emb.cpu().numpy()
+            ptr += bsz
 
-    Z_embeddings = np.concatenate(embeddings_list, axis=0).astype(np.float32)
     print(f"  -> Extracted embeddings shape: {Z_embeddings.shape}")
 
-    # Concatenate with tabular features
-    X_tab = data_dict["X_tabular"]
-    X_hybrid = np.hstack([X_tab, Z_embeddings]).astype(np.float32)
-    print(f"  -> Hybrid feature matrix shape: {X_hybrid.shape}")
-
-    # Train secondary XGBoost on X_hybrid
+    # Build hybrid features per partition to conserve peak memory
     tr = data_dict["train_idx"]
     va = data_dict["val_idx"]
+    te = data_dict["test_idx"]
     y = data_dict["y"]
+    X_tab = data_dict["X_tabular"]
+
+    X_hybrid_tr = np.hstack([X_tab[tr], Z_embeddings[tr]]).astype(np.float32)
+    X_hybrid_va = np.hstack([X_tab[va], Z_embeddings[va]]).astype(np.float32)
+    X_hybrid_te = np.hstack([X_tab[te], Z_embeddings[te]]).astype(np.float32)
+
+    del Z_embeddings
+    gc.collect()
 
     pos_weight = float((y[tr] == 0).sum() / max((y[tr] == 1).sum(), 1))
 
@@ -190,11 +199,14 @@ def train_hybrid_model(
     )
     t0 = time.time()
     hybrid_xgb.fit(
-        X_hybrid[tr], y[tr],
-        eval_set=[(X_hybrid[va], y[va])],
+        X_hybrid_tr, y[tr],
+        eval_set=[(X_hybrid_va, y[va])],
         verbose=False,
     )
     t_hybrid = float(time.time() - t0)
     print(f"  -> Hybrid XGBoost trained in {t_hybrid:.1f}s (best iteration: {hybrid_xgb.best_iteration})")
 
-    return hybrid_xgb, X_hybrid, t_hybrid
+    del X_hybrid_tr, X_hybrid_va
+    gc.collect()
+
+    return hybrid_xgb, X_hybrid_te, t_hybrid

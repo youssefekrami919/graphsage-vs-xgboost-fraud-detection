@@ -117,15 +117,29 @@ def main():
     # ------------------------------------------------------------------
     print("\n>>> STAGE 3: Training Tabular Baselines (XGBoost, RF, LR)")
     tabular_models, tabular_times = train_tabular_baselines(data_dict, config)
+    save_native_models(tabular_models, None, None, config)
+
+    # Cache X_neu_test and release monolithic X_neural to free ~1.02 GB RAM
+    test_idx = data_dict["test_idx"]
+    data_dict["X_neu_test"] = data_dict["X_neural"][test_idx].copy()
+    del data_dict["X_neural"]
+    import gc
+    gc.collect()
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
 
     # ------------------------------------------------------------------
     # Step 4: Inductive GraphSAGE Training
     # ------------------------------------------------------------------
     print("\n>>> STAGE 4: Training Proposed Inductive GraphSAGE")
     graphsage_model, gs_history, t_graphsage = train_graphsage(graph_data, config, device)
+    save_native_models({}, graphsage_model, None, config)
 
     # Visualization: GraphSAGE training loss and validation AUC curves
     plot_graphsage_training_curves(gs_history, config)
+    gc.collect()
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
 
     # ------------------------------------------------------------------
     # Step 5: Appendix GAT Training (Optional)
@@ -135,6 +149,10 @@ def main():
     if not args.skip_gat:
         print("\n>>> STAGE 5: Training Appendix Baseline (GAT)")
         gat_model, t_gat = train_gat(graph_data, config, device)
+        save_native_models({}, None, gat_model, config)
+        gc.collect()
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
     else:
         print("\n>>> STAGE 5: Skipping GAT baseline (--skip_gat flag set)")
 
@@ -142,11 +160,15 @@ def main():
     # Step 6: Hybrid Model Training (Optional Extension)
     # ------------------------------------------------------------------
     hybrid_model = None
-    X_hybrid = None
+    X_hybrid_test = None
     t_hybrid = None
     if not args.skip_hybrid:
         print("\n>>> STAGE 6: Training Proposed Hybrid Model (GraphSAGE + XGBoost)")
-        hybrid_model, X_hybrid, t_hybrid = train_hybrid_model(graphsage_model, graph_data, data_dict, config, device)
+        hybrid_model, X_hybrid_test, t_hybrid = train_hybrid_model(graphsage_model, graph_data, data_dict, config, device)
+        save_native_models({}, None, None, config, hybrid_model=hybrid_model)
+        gc.collect()
+        if device.type == "cuda":
+            torch.cuda.empty_cache()
     else:
         print("\n>>> STAGE 6: Skipping Hybrid Model (--skip_hybrid flag set)")
 
@@ -168,7 +190,7 @@ def main():
     test_idx = data_dict["test_idx"]
     y_test = data_dict["y"][test_idx]
     X_tab_test = data_dict["X_tabular"][test_idx]
-    X_neu_test = data_dict["X_neural"][test_idx]
+    X_neu_test = data_dict["X_neu_test"]
 
     predictions_dict = {}
     metrics_dict = {}
@@ -201,7 +223,7 @@ def main():
 
     # 6. Hybrid Model (if trained)
     if hybrid_model is not None:
-        hyb_prob = hybrid_model.predict_proba(X_hybrid[test_idx])[:, 1]
+        hyb_prob = hybrid_model.predict_proba(X_hybrid_test)[:, 1]
         predictions_dict["Hybrid"] = hyb_prob
         metrics_dict["Hybrid"] = compute_classification_metrics(y_test, hyb_prob)
 
