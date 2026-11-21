@@ -134,22 +134,22 @@ def train_tabular_baselines(data_dict: dict, config: dict) -> dict:
         eval_set=[(X_tab[va], y[va])],
         verbose=False,
     )
-    print(f"  XGBoost trained in {time.time() - t0:.1f}s "
-          f"(best iteration: {xgb_model.best_iteration})")
+    t_xgb = time.time() - t0
+    print(f"  XGBoost trained in {t_xgb:.1f}s (best iteration: {xgb_model.best_iteration})")
     models["XGBoost"] = xgb_model
 
-    # --- Logistic Regression (Linear Floor) ---
+    # --- Logistic Regression (Linear Floor: fast lbfgs solver) ---
     print("[MODELS] Training Logistic Regression ...")
     t0 = time.time()
     lr_model = LogisticRegression(
         class_weight="balanced",
-        max_iter=500,
+        max_iter=200,
         random_state=seed,
-        solver="saga",
-        n_jobs=-1,
+        solver="lbfgs",
     )
     lr_model.fit(X_neu[tr], y[tr])
-    print(f"  Logistic Regression trained in {time.time() - t0:.1f}s")
+    t_lr = time.time() - t0
+    print(f"  Logistic Regression trained in {t_lr:.1f}s")
     models["LogisticRegression"] = lr_model
 
     # --- Random Forest (Second Tree Baseline) ---
@@ -163,10 +163,17 @@ def train_tabular_baselines(data_dict: dict, config: dict) -> dict:
         random_state=seed,
     )
     rf_model.fit(X_tab[tr], y[tr])
-    print(f"  Random Forest trained in {time.time() - t0:.1f}s")
+    t_rf = time.time() - t0
+    print(f"  Random Forest trained in {t_rf:.1f}s")
     models["RandomForest"] = rf_model
 
-    return models
+    training_times = {
+        "XGBoost": float(t_xgb),
+        "LogisticRegression": float(t_lr),
+        "RandomForest": float(t_rf),
+    }
+
+    return models, training_times
 
 
 # =========================================================================
@@ -178,9 +185,10 @@ def train_graphsage(graph_data, config: dict, device: torch.device):
     gradient clipping, and early stopping.
 
     Returns:
-        Trained FraudGraphSAGE model (best validation AUC weights loaded).
+        tuple: (Trained FraudGraphSAGE model, training history dict, elapsed training time in seconds)
     """
     print("[MODELS] Training GraphSAGE ...")
+    t0 = time.time()
 
     train_loader = NeighborLoader(
         graph_data,
@@ -214,6 +222,14 @@ def train_graphsage(graph_data, config: dict, device: torch.device):
     best_weights = None
     patience_counter = 0
 
+    history = {
+        "epochs": [],
+        "train_loss": [],
+        "val_auc": [],
+        "best_epoch": 0,
+        "best_val_auc": 0.0,
+    }
+
     for epoch in range(1, config["epochs"] + 1):
         # --- Train ---
         model.train()
@@ -244,11 +260,17 @@ def train_graphsage(graph_data, config: dict, device: torch.device):
 
         val_auc = roc_auc_score(np.concatenate(val_targets), np.concatenate(val_preds))
 
+        history["epochs"].append(epoch)
+        history["train_loss"].append(float(avg_loss))
+        history["val_auc"].append(float(val_auc))
+
         print(f"  Epoch {epoch:02d}/{config['epochs']} | "
               f"Loss: {avg_loss:.4f} | Val AUC: {val_auc:.4f}")
 
         if val_auc > best_val_auc:
             best_val_auc = val_auc
+            history["best_epoch"] = epoch
+            history["best_val_auc"] = float(val_auc)
             best_weights = {k: v.cpu().clone() for k, v in model.state_dict().items()}
             patience_counter = 0
         else:
@@ -261,8 +283,9 @@ def train_graphsage(graph_data, config: dict, device: torch.device):
         model.load_state_dict(best_weights)
     model = model.to(device)
 
-    print(f"[MODELS] GraphSAGE training complete. Best Val AUC: {best_val_auc:.4f}")
-    return model
+    t_graphsage = float(time.time() - t0)
+    print(f"[MODELS] GraphSAGE training complete in {t_graphsage:.1f}s. Best Val AUC: {best_val_auc:.4f}")
+    return model, history, t_graphsage
 
 
 # =========================================================================
@@ -273,9 +296,10 @@ def train_gat(graph_data, config: dict, device: torch.device):
     Train GAT model (appendix baseline) with identical protocol to GraphSAGE.
 
     Returns:
-        Trained FraudGAT model.
+        tuple: (Trained FraudGAT model, elapsed training time in seconds)
     """
     print("[MODELS] Training GAT (appendix baseline) ...")
+    t0 = time.time()
 
     train_loader = NeighborLoader(
         graph_data,
@@ -354,5 +378,6 @@ def train_gat(graph_data, config: dict, device: torch.device):
         model.load_state_dict(best_weights)
     model = model.to(device)
 
-    print(f"[MODELS] GAT training complete. Best Val AUC: {best_val_auc:.4f}")
-    return model
+    t_gat = float(time.time() - t0)
+    print(f"[MODELS] GAT training complete in {t_gat:.1f}s. Best Val AUC: {best_val_auc:.4f}")
+    return model, t_gat
