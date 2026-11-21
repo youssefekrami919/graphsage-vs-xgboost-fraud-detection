@@ -14,6 +14,6 @@ echo "=== [2/3] Running Rapid Prototype (100k Transactions) ==="
 python main.py --mode prototype --seed 42
 
 echo "=== [3/3] Execution Complete ==="
-echo "Tables exported to: results/tables/"
-echo "Figures exported to: results/figures/"
-echo "Models saved to: models/native/ and models/onnx/"
+echo "Tables exported to: results/prototype/tables/"
+echo "Figures exported to: results/prototype/figures/"
+echo "Models saved to: models/prototype/native/ and models/prototype/onnx/"
