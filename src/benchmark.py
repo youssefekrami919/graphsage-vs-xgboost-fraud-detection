@@ -332,6 +332,50 @@ def evaluate_cold_start_robustness(
     eval_subset("Connected (Degree >= 3)", connected_indices)
 
     df_robustness = pd.DataFrame(rows)
+
+    # Wide format matching Table 7
+    table7_rows = []
+    for model_name in ["XGBoost", "GraphSAGE"]:
+        iso_row = df_robustness[(df_robustness["Topology"] == "Isolated (Degree = 0)") & (df_robustness["Model"] == model_name)]
+        conn_row = df_robustness[(df_robustness["Topology"] == "Connected (Degree >= 3)") & (df_robustness["Model"] == model_name)]
+        if len(iso_row) > 0 and len(conn_row) > 0:
+            iso_pr = iso_row["PR-AUC"].values[0]
+            iso_roc = iso_row["ROC-AUC"].values[0]
+            conn_pr = conn_row["PR-AUC"].values[0]
+            conn_roc = conn_row["ROC-AUC"].values[0]
+            table7_rows.append({
+                "Model": model_name,
+                "Isolated Count": int(iso_row["Count"].values[0]),
+                "Isolated PR-AUC": float(iso_pr),
+                "Isolated ROC-AUC": float(iso_roc),
+                "Connected Count": int(conn_row["Count"].values[0]),
+                "Connected PR-AUC": float(conn_pr),
+                "Connected ROC-AUC": float(conn_roc),
+                "Delta PR-AUC (Conn - Iso)": float(conn_pr - iso_pr),
+            })
+
+    df_table7 = pd.DataFrame(table7_rows)
+    if len(table7_rows) == 2:
+        delta_row = {
+            "Model": "Delta (GraphSAGE - XGBoost)",
+            "Isolated Count": 0,
+            "Isolated PR-AUC": float(table7_rows[1]["Isolated PR-AUC"] - table7_rows[0]["Isolated PR-AUC"]),
+            "Isolated ROC-AUC": float(table7_rows[1]["Isolated ROC-AUC"] - table7_rows[0]["Isolated ROC-AUC"]),
+            "Connected Count": 0,
+            "Connected PR-AUC": float(table7_rows[1]["Connected PR-AUC"] - table7_rows[0]["Connected PR-AUC"]),
+            "Connected ROC-AUC": float(table7_rows[1]["Connected ROC-AUC"] - table7_rows[0]["Connected ROC-AUC"]),
+            "Delta PR-AUC (Conn - Iso)": float(table7_rows[1]["Delta PR-AUC (Conn - Iso)"] - table7_rows[0]["Delta PR-AUC (Conn - Iso)"]),
+        }
+        df_table7 = pd.concat([df_table7, pd.DataFrame([delta_row])], ignore_index=True)
+
+    export_results_table(
+        df_table7,
+        "coldstart_metrics",
+        config,
+        caption="Cold-Start and Structural Topology Robustness Metrics (Table 7)",
+        label="coldstart_metrics"
+    )
+
     return df_robustness
 
 
@@ -363,3 +407,228 @@ def export_results_table(df: pd.DataFrame, filename_base: str, config: dict, cap
         f.write(latex_code)
 
     print(f"[BENCHMARK] Exported table -> {csv_path} and {tex_path}")
+
+
+# =========================================================================
+# 6. Cost-Sensitive Financial Savings (Hook 3 / Table 8)
+# =========================================================================
+def compute_financial_savings(
+    y_true: np.ndarray,
+    y_prob_dict: dict,
+    transaction_amt: np.ndarray,
+    config: dict,
+    c_fp: float = 5.0,
+    threshold: float = 0.5,
+) -> pd.DataFrame:
+    """
+    Computes cost-sensitive financial savings based on actual transaction amounts ($).
+
+    Formulation:
+      - Saved Fraud Dollars: sum of TransactionAmt for True Positives (fraud correctly prevented).
+      - False-Positive Cost: c_fp * count(FP) (operational cost of manual investigation/alert fatigue).
+      - False-Negative Cost: sum of TransactionAmt for False Negatives (fraud slip loss).
+      - Net Financial Savings: Saved Fraud Dollars - False-Positive Cost.
+      - Detection Rate (%): Saved Fraud Dollars / Total Fraud Dollars * 100.
+    """
+    total_fraud_dollars = float(transaction_amt[y_true == 1].sum())
+
+    rows = []
+    for model_name, y_prob in y_prob_dict.items():
+        y_pred = (y_prob >= threshold).astype(int)
+        tp_mask = (y_true == 1) & (y_pred == 1)
+        fp_mask = (y_true == 0) & (y_pred == 1)
+        fn_mask = (y_true == 1) & (y_pred == 0)
+
+        saved_dollars = float(transaction_amt[tp_mask].sum())
+        fp_cost = float(c_fp * fp_mask.sum())
+        fn_loss = float(transaction_amt[fn_mask].sum())
+        net_savings = float(saved_dollars - fp_cost)
+        detection_rate = float((saved_dollars / max(total_fraud_dollars, 1e-6)) * 100.0)
+
+        rows.append({
+            "Model": model_name,
+            "Saved Fraud ($)": saved_dollars,
+            "FP Cost ($)": fp_cost,
+            "FN Loss ($)": fn_loss,
+            "Net Savings ($)": net_savings,
+            "Fraud Dollar Recall (%)": detection_rate,
+            "TP Count": int(tp_mask.sum()),
+            "FP Count": int(fp_mask.sum()),
+        })
+
+    df_financial = pd.DataFrame(rows)
+
+    if "XGBoost" in y_prob_dict and "GraphSAGE" in y_prob_dict:
+        xgb_row = df_financial[df_financial["Model"] == "XGBoost"].iloc[0]
+        gs_row = df_financial[df_financial["Model"] == "GraphSAGE"].iloc[0]
+        delta_row = {
+            "Model": "Delta (GraphSAGE - XGBoost)",
+            "Saved Fraud ($)": float(gs_row["Saved Fraud ($)"] - xgb_row["Saved Fraud ($)"]),
+            "FP Cost ($)": float(gs_row["FP Cost ($)"] - xgb_row["FP Cost ($)"]),
+            "FN Loss ($)": float(gs_row["FN Loss ($)"] - xgb_row["FN Loss ($)"]),
+            "Net Savings ($)": float(gs_row["Net Savings ($)"] - xgb_row["Net Savings ($)"]),
+            "Fraud Dollar Recall (%)": float(gs_row["Fraud Dollar Recall (%)"] - xgb_row["Fraud Dollar Recall (%)"]),
+            "TP Count": int(gs_row["TP Count"] - xgb_row["TP Count"]),
+            "FP Count": int(gs_row["FP Count"] - xgb_row["FP Count"]),
+        }
+        df_financial = pd.concat([df_financial, pd.DataFrame([delta_row])], ignore_index=True)
+
+    export_results_table(
+        df_financial,
+        "financial_savings",
+        config,
+        caption="Cost-Sensitive Financial Savings and Loss Prevention Breakdown (Table 8)",
+        label="financial_savings"
+    )
+
+    return df_financial
+
+
+def sweep_cost_sensitivity(
+    y_true: np.ndarray,
+    y_prob_dict: dict,
+    transaction_amt: np.ndarray,
+    config: dict,
+    c_fp_min: float = 1.0,
+    c_fp_max: float = 25.0,
+    n_points: int = 25,
+    threshold: float = 0.5,
+) -> pd.DataFrame:
+    """
+    Parametric sweep of operational alert cost c_fp in [$1.0, $25.0].
+    Evaluates net financial savings and identifies break-even thresholds.
+    """
+    c_fp_values = np.linspace(c_fp_min, c_fp_max, n_points)
+    sweep_records = []
+
+    for c_fp in c_fp_values:
+        row = {"c_fp": float(c_fp)}
+        for model_name, y_prob in y_prob_dict.items():
+            y_pred = (y_prob >= threshold).astype(int)
+            tp_mask = (y_true == 1) & (y_pred == 1)
+            fp_mask = (y_true == 0) & (y_pred == 1)
+
+            saved_dollars = float(transaction_amt[tp_mask].sum())
+            fp_cost = float(c_fp * fp_mask.sum())
+            net_savings = float(saved_dollars - fp_cost)
+            row[f"NetSavings_{model_name}"] = net_savings
+
+        sweep_records.append(row)
+
+    df_sweep = pd.DataFrame(sweep_records)
+    export_results_table(
+        df_sweep,
+        "cost_sensitivity_sweep",
+        config,
+        caption="Cost Sensitivity Parameter Sweep across c_FP ($1 to $25)",
+        label="cost_sensitivity_sweep"
+    )
+    return df_sweep
+
+
+# =========================================================================
+# 7. Additional Publication Tables (Table 6, Table 9, Training Times)
+# =========================================================================
+def export_latency_table(
+    tabular_latency: dict,
+    gnn_latency_1k: dict,
+    gnn_latency_1tx: dict,
+    config: dict,
+) -> pd.DataFrame:
+    """
+    Export Table 6: Inference Latency Benchmark across models with
+    Batch (1k tx), Single-Stream (1 tx), and GNN sampling/forward decomposition.
+    """
+    rows = []
+    # Tabular models
+    for m, vals in tabular_latency.items():
+        rows.append({
+            "Model": m,
+            "Batch 1k Latency (ms)": f"{vals['batch_mean']:.2f} +/- {vals['batch_std']:.2f}",
+            "Single Stream Latency (ms)": f"{vals['single_mean']:.2f} +/- {vals['single_std']:.2f}",
+            "Sampling Latency tau_sampling (ms)": "N/A",
+            "Forward Latency tau_forward (ms)": f"{vals['single_mean']:.2f}",
+        })
+
+    # GNN models
+    for m in gnn_latency_1k.keys():
+        b_mean = gnn_latency_1k[m]["total_mean"]
+        b_std = gnn_latency_1k[m]["total_std"]
+        s_mean = gnn_latency_1tx[m]["total_mean"]
+        s_std = gnn_latency_1tx[m]["total_std"]
+        samp = gnn_latency_1tx[m]["sampling_mean"]
+        fwd = gnn_latency_1tx[m]["forward_mean"]
+
+        rows.append({
+            "Model": m,
+            "Batch 1k Latency (ms)": f"{b_mean:.2f} +/- {b_std:.2f}",
+            "Single Stream Latency (ms)": f"{s_mean:.2f} +/- {s_std:.2f}",
+            "Sampling Latency tau_sampling (ms)": f"{samp:.2f}",
+            "Forward Latency tau_forward (ms)": f"{fwd:.2f}",
+        })
+
+    df_lat = pd.DataFrame(rows)
+    export_results_table(
+        df_lat,
+        "latency_benchmark",
+        config,
+        caption="Inference Latency Benchmark across Tabular and GNN Architectures (Table 6)",
+        label="latency_benchmark"
+    )
+    return df_lat
+
+
+def export_overall_metrics_table(
+    metrics_dict: dict,
+    training_times: dict,
+    ttest_dict: dict,
+    config: dict,
+) -> pd.DataFrame:
+    """
+    Export Table 9: Full Comparative Performance Metrics across All Architectures.
+    """
+    rows = []
+    for model_name, m in metrics_dict.items():
+        row = {
+            "Model": model_name,
+            "PR-AUC": float(m["PR-AUC"]),
+            "ROC-AUC": float(m["ROC-AUC"]),
+            "F1-Score": float(m["F1-Score"]),
+            "Balanced-Acc": float(m["Balanced-Acc"]),
+            "Training Duration (s)": float(training_times.get(model_name, 0.0)),
+        }
+        if model_name == "XGBoost":
+            row["p-value vs XGBoost"] = "Baseline"
+        elif model_name == "GraphSAGE" and ttest_dict is not None and "ttest" in ttest_dict:
+            p_bon = ttest_dict["ttest"]["bonferroni_p_value"]
+            row["p-value vs XGBoost"] = f"{p_bon:.4e}" if p_bon < 0.001 else f"{p_bon:.4f}"
+        else:
+            row["p-value vs XGBoost"] = "--"
+        rows.append(row)
+
+    df_overall = pd.DataFrame(rows)
+    export_results_table(
+        df_overall,
+        "overall_metrics",
+        config,
+        caption="Comparative Performance Benchmark on Inductive Test Set (Table 9)",
+        label="overall_metrics"
+    )
+    return df_overall
+
+
+def export_training_times_table(training_times: dict, config: dict) -> pd.DataFrame:
+    """
+    Export dedicated training times summary table.
+    """
+    rows = [{"Model": k, "Training Duration (s)": float(v), "Training Duration (min)": float(v / 60.0)}
+            for k, v in training_times.items()]
+    df_times = pd.DataFrame(rows)
+    export_results_table(
+        df_times,
+        "training_times_summary",
+        config,
+        caption="Computational Training Overhead Summary across Architectures",
+        label="training_times"
+    )
+    return df_times
